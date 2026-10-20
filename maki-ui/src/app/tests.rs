@@ -6867,6 +6867,44 @@ fn closing_split_restores_layout() {
     assert_eq!(after, before, "closing the split restores the layout");
 }
 
+#[test_case(0 ; "zero")]
+#[test_case(2 ; "two")]
+#[test_case(10 ; "ten")]
+fn output_margin_insets_the_chat_only(margin: u16) {
+    let mut app = test_app();
+    app.ui_config.output_margin = margin;
+    let (msg, bottom, status, input, _splits) = app.layout_geometry(TEST_AREA);
+
+    assert_eq!(msg.x, TEST_AREA.x + margin);
+    assert_eq!(msg.width, TEST_AREA.width - margin * 2);
+    assert_eq!(status.width, TEST_AREA.width, "status bar stays full width");
+    assert_eq!(input.width, TEST_AREA.width, "prompt stays full width");
+    assert_eq!(
+        bottom.width, TEST_AREA.width,
+        "bottom panel stays full width"
+    );
+}
+
+#[test]
+fn output_margin_wider_than_the_chat_leaves_no_room() {
+    let mut app = test_app();
+    app.ui_config.output_margin = TEST_AREA.width;
+    let (msg, _bottom, _status, _input, _splits) = app.layout_geometry(TEST_AREA);
+    assert_eq!(msg.width, 0, "a margin past the chat collapses it");
+}
+
+#[test]
+fn output_margin_is_applied_inside_a_split() {
+    let mut app = test_app();
+    open_split_window(&mut app, maki_lua::Split::Left);
+    app.ui_config.output_margin = 2;
+    let (msg, _bottom, _status, _input, splits) = app.layout_geometry(TEST_AREA);
+
+    let band = splits.rect(maki_lua::Split::Left).expect("left band");
+    assert_eq!(msg.x, band.width + 2, "margin sits inside the split");
+    assert_eq!(msg.width, TEST_AREA.width - band.width - 4);
+}
+
 #[test]
 fn permission_prompt_takes_bottom_precedence_over_below_split() {
     let mut app = test_app();

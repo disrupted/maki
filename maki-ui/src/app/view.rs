@@ -13,7 +13,7 @@ use crate::theme;
 use maki_lua::Split;
 use maki_providers::RequestOptions;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Widget};
 
@@ -28,6 +28,11 @@ struct ViewLayout {
     input_area: Rect,
     splits: SplitLayout,
     bottom_takeover: bool,
+}
+
+/// `Rect::inner` saturates to an empty area when the margin is too wide, so no clamp is needed.
+fn with_horizontal_margin(area: Rect, margin: u16) -> Rect {
+    area.inner(Margin::new(margin, 0))
 }
 
 impl App {
@@ -130,6 +135,7 @@ impl App {
         // the bottom panel only ever splits the chat region.
         let [msg_area, bottom_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(bottom_height)]).areas(inner);
+        let msg_area = with_horizontal_margin(msg_area, self.ui_config.output_margin);
 
         let panel_reqs = if bottom_takeover {
             Vec::new()
