@@ -2499,7 +2499,7 @@ fn page_keys_scroll_the_transcript_by_one_page() {
     let backend = ratatui::backend::TestBackend::new(area.width, area.bottom());
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     terminal
-        .draw(|frame| app.active_chat().view(frame, area, false, true, &[]))
+        .draw(|frame| app.active_chat().view(frame, area, area, false, true, &[]))
         .unwrap();
     let down = app.active_chat().win_view();
     assert_eq!(
@@ -2599,7 +2599,7 @@ fn app_with_transcript(zone: Rect) -> App {
     let backend = ratatui::backend::TestBackend::new(zone.width, zone.bottom());
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     terminal
-        .draw(|frame| app.active_chat().view(frame, zone, false, true, &[]))
+        .draw(|frame| app.active_chat().view(frame, zone, zone, false, true, &[]))
         .unwrap();
     app
 }
@@ -6891,6 +6891,19 @@ fn output_margin_wider_than_the_chat_leaves_no_room() {
     app.ui_config.output_margin = TEST_AREA.width;
     let (msg, _bottom, _status, _input, _splits) = app.layout_geometry(TEST_AREA);
     assert_eq!(msg.width, 0, "a margin past the chat collapses it");
+}
+
+#[test_case(0 ; "no margin")]
+#[test_case(2 ; "with margin")]
+fn output_margin_keeps_the_scrollbar_at_the_viewport_edge(margin: u16) {
+    let mut app = test_app();
+    app.ui_config.output_margin = margin;
+    let scrollbar = app.scrollbar_area(TEST_AREA);
+    assert_eq!(
+        scrollbar.x,
+        TEST_AREA.width - 1,
+        "scrollbar stays on the right edge for any margin",
+    );
 }
 
 #[test]
