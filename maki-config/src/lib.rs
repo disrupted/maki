@@ -32,6 +32,7 @@ pub const DEFAULT_FLASH_DURATION_MS: u64 = 1500;
 pub const DEFAULT_TYPEWRITER_MS_PER_CHAR: u64 = 4;
 pub const DEFAULT_MOUSE_SCROLL_LINES: u32 = 3;
 pub const DEFAULT_MAX_INPUT_LINES: u32 = 20;
+pub const DEFAULT_OUTPUT_MARGIN: u16 = 0;
 pub const DEFAULT_THINKING_LINES: usize = 3;
 const NEVER_COLLAPSE_THINKING: i64 = -1;
 const THINKING_LINES_RANGE: &str =
@@ -1275,7 +1276,7 @@ pub struct UiConfig {
     pub max_input_lines: u32,
 
     #[config(
-        default = 0,
+        default = DEFAULT_OUTPUT_MARGIN,
         desc = "Horizontal gutter on the scrollable output, in columns. Does not affect the prompt or status bar"
     )]
     pub output_margin: u16,
@@ -2911,7 +2912,7 @@ mod tests {
         let config = RawConfig::default().into_config(&[]).unwrap();
         assert!(config.ui.splash_animation);
         assert_eq!(config.ui.notifications, NotificationMethod::Auto);
-        assert_eq!(config.ui.output_margin, 0);
+        assert_eq!(config.ui.output_margin, DEFAULT_OUTPUT_MARGIN);
         assert_eq!(config.agent.max_output_bytes, DEFAULT_MAX_OUTPUT_BYTES);
         assert_eq!(
             config.provider.connect_timeout,
