@@ -1316,7 +1316,7 @@ impl UiConfig {
                 .unwrap_or(DEFAULT_TYPEWRITER_MS_PER_CHAR),
             mouse_scroll_lines: f.mouse_scroll_lines.unwrap_or(DEFAULT_MOUSE_SCROLL_LINES),
             max_input_lines: f.max_input_lines.unwrap_or(DEFAULT_MAX_INPUT_LINES),
-            output_margin: f.output_margin.unwrap_or(0),
+            output_margin: f.output_margin.unwrap_or(DEFAULT_OUTPUT_MARGIN),
             thinking_lines: f
                 .thinking_lines
                 .unwrap_or(ThinkingLines::Tail(DEFAULT_THINKING_LINES)),
