@@ -10,7 +10,7 @@ use crate::components::file_picker::UNREADABLE_DIR_MSG;
 use crate::components::keybindings::{KeybindContext, key as kb};
 use crate::components::messages::ScrollPos;
 use crate::components::rewind_picker::RewindEntry;
-use crate::components::split_layout::MIN_CHAT_ROWS;
+use crate::components::split_layout::{MIN_CHAT_COLS, MIN_CHAT_ROWS};
 use crate::components::{ExitRequest, buffer_text, key, test_model};
 use crate::repaint::expect::{OWED, QUIET};
 use crate::selection::{RowPos, SelectableZone, SelectionState, SelectionZone};
@@ -6886,11 +6886,15 @@ fn output_margin_insets_the_chat_only(margin: u16) {
 }
 
 #[test]
-fn output_margin_wider_than_the_chat_leaves_no_room() {
+fn output_margin_gives_way_before_squeezing_the_chat() {
     let mut app = test_app();
     app.ui_config.output_margin = TEST_AREA.width;
     let (msg, _bottom, _status, _input, _splits) = app.layout_geometry(TEST_AREA);
-    assert_eq!(msg.width, 0, "a margin past the chat collapses it");
+    assert_eq!(
+        msg.width, MIN_CHAT_COLS,
+        "the gutter yields to the column floor"
+    );
+    assert_eq!(msg.x, (TEST_AREA.width - MIN_CHAT_COLS) / 2);
 }
 
 #[test_case(0 ; "no margin")]

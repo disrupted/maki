@@ -5,7 +5,7 @@ use crate::components::input::{BORDER_ROWS, Placeholder};
 #[cfg(test)]
 use crate::components::keybindings::KeybindContext;
 use crate::components::queue_panel;
-use crate::components::split_layout::{MIN_CHAT_ROWS, SplitLayout, carve};
+use crate::components::split_layout::{MIN_CHAT_COLS, MIN_CHAT_ROWS, SplitLayout, carve};
 use crate::components::status_bar::{StatusBarContext, UsageStats};
 use crate::components::usage_modal::UsageModalContext;
 use crate::selection::{self, SelectableZone, SelectionZone, ZoneRegistry};
@@ -31,8 +31,10 @@ struct ViewLayout {
     bottom_takeover: bool,
 }
 
-/// `Rect::inner` saturates to an empty area when the margin is too wide, so no clamp is needed.
-fn with_horizontal_margin(area: Rect, margin: u16) -> Rect {
+/// Inset `area` horizontally by `margin`, clamping so the chat keeps at least
+/// [`MIN_CHAT_COLS`] columns.
+pub(super) fn with_horizontal_margin(area: Rect, margin: u16) -> Rect {
+    let margin = margin.min(area.width.saturating_sub(MIN_CHAT_COLS) / 2);
     area.inner(Margin::new(margin, 0))
 }
 

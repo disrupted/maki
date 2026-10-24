@@ -1,8 +1,9 @@
 use maki_lua::{Axis, Split};
 use ratatui::layout::Rect;
 
-/// Minimum interior columns the chat keeps after every column split is carved.
-const MIN_CHAT_COLS: u16 = 20;
+/// Minimum width the chat keeps: column splits and the `ui.output_margin`
+/// gutter both give way to it.
+pub const MIN_CHAT_COLS: u16 = 20;
 /// The one floor that protects the chat from vanishing: `carve` clamps row
 /// splits against it, and the app clamps the bottom panel against it too, so no
 /// feature can shrink the chat below this no matter how it grows.
