@@ -21,6 +21,7 @@ use super::{App, Mode, Status};
 
 struct ViewLayout {
     msg_area: Rect,
+    msg_band: Rect,
     scrollbar_area: Rect,
     bottom_area: Rect,
     status_area: Rect,
@@ -136,14 +137,14 @@ impl App {
 
         // The `below` split lives outside `inner` (drawn by render_splits), so
         // the bottom panel only ever splits the chat region.
-        let [msg_area, bottom_area] =
+        let [msg_band, bottom_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(bottom_height)]).areas(inner);
-        let msg_area = with_horizontal_margin(msg_area, self.ui_config.output_margin);
+        let msg_area = with_horizontal_margin(msg_band, self.ui_config.output_margin);
         let scrollbar_area = Rect::new(
             inner.right().saturating_sub(1),
-            msg_area.y,
+            msg_band.y,
             1,
-            msg_area.height,
+            msg_band.height,
         );
 
         let panel_reqs = if bottom_takeover {
@@ -175,6 +176,7 @@ impl App {
 
         ViewLayout {
             msg_area,
+            msg_band,
             scrollbar_area,
             bottom_area,
             status_area,
@@ -398,7 +400,7 @@ impl App {
         self.zones = ZoneRegistry::new();
 
         self.zones.push(SelectableZone {
-            area: layout.msg_area,
+            area: layout.msg_band,
             zone: SelectionZone::Messages,
         });
 

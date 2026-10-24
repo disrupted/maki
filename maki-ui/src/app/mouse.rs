@@ -13,6 +13,7 @@ use crate::repaint::Dirty;
 
 use super::App;
 use super::image_paste::{spawn_read, take_ready};
+use super::view::with_horizontal_margin;
 
 pub(super) const EDGE_SCROLL_LINES: i32 = 1;
 pub(super) const EDGE_SCROLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -37,9 +38,17 @@ impl App {
                         self.input_box
                             .handle_click(zone.area, event.row, event.column);
                     }
-                    let pos = self.doc_pos(zone.zone, zone.area, event.row, event.column);
+                    // The zone spans the full band, but selection columns are
+                    // relative to the inset text rect.
+                    let area = match zone.zone {
+                        SelectionZone::Messages => {
+                            with_horizontal_margin(zone.area, self.ui_config.output_margin)
+                        }
+                        _ => zone.area,
+                    };
+                    let pos = self.doc_pos(zone.zone, area, event.row, event.column);
                     self.selection_state = Some(SelectionState::Dragging {
-                        sel: Selection::start(pos, zone.area, zone.zone),
+                        sel: Selection::start(pos, area, zone.zone),
                         edge_scroll: None,
                         last_drag_col: event.column,
                     });
@@ -300,7 +309,7 @@ impl App {
         self.zones
             .find(SelectionZone::Messages)
             .map(|z| {
-                let a = z.area;
+                let a = with_horizontal_margin(z.area, self.ui_config.output_margin);
                 Rect::new(a.x, a.y, a.width.saturating_sub(1), a.height)
             })
             .unwrap_or_default()
