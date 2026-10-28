@@ -21,7 +21,7 @@ use crate::markdown::{should_truncate, text_to_lines, truncate_output, truncatio
 use maki_agent::{
     BufferSnapshot, InstructionBlock, SnapshotSpan, SpanColor, SpanStyle, ToolInput, ToolOutput,
 };
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::render_worker::RenderWorker;
@@ -33,6 +33,9 @@ pub struct RenderCtx<'a> {
 }
 
 pub const TOOL_INDICATOR: &str = "● ";
+const ASSISTANT_MARKER: &str = TOOL_INDICATOR;
+const USER_MARKER: &str = "❯ ";
+const THINKING_LABEL: &str = "thinking> ";
 pub const TOOL_BODY_INDENT: &str = "  ";
 pub(crate) const SPINNER_STYLE_NAME: &str = "spinner";
 pub(crate) const SPINNER_STYLE_PREFIX: &str = "spinner:";
@@ -45,18 +48,30 @@ const INSTRUCTIONS_TOOL: &str = "load";
 const UNNAMED_TOOL: &str = "?";
 
 pub struct RoleStyle {
-    pub prefix: &'static str,
+    pub marker: &'static str,
+    pub marker_style: Style,
+    pub label: &'static str,
     pub text_style: Style,
-    pub prefix_style: Style,
     pub use_markdown: bool,
     pub max_line_bytes: Option<usize>,
 }
 
+impl RoleStyle {
+    pub fn label_style(&self) -> Style {
+        self.marker_style.add_modifier(Modifier::BOLD)
+    }
+}
+
+pub(crate) fn gutter_marker(style: &RoleStyle) -> Option<Span<'static>> {
+    (!style.marker.is_empty()).then(|| Span::styled(style.marker, style.label_style()))
+}
+
 pub fn assistant_style() -> RoleStyle {
     RoleStyle {
-        prefix: "maki> ",
+        marker: ASSISTANT_MARKER,
+        marker_style: theme::current().assistant_prefix,
+        label: "",
         text_style: theme::current().assistant,
-        prefix_style: theme::current().assistant_prefix,
         use_markdown: true,
         max_line_bytes: None,
     }
@@ -64,9 +79,10 @@ pub fn assistant_style() -> RoleStyle {
 
 pub fn user_style() -> RoleStyle {
     RoleStyle {
-        prefix: "you> ",
+        marker: USER_MARKER,
+        marker_style: theme::current().user,
+        label: "",
         text_style: theme::current().assistant,
-        prefix_style: theme::current().user,
         use_markdown: true,
         max_line_bytes: None,
     }
@@ -74,9 +90,10 @@ pub fn user_style() -> RoleStyle {
 
 pub fn thinking_style() -> RoleStyle {
     RoleStyle {
-        prefix: "thinking> ",
+        marker: ASSISTANT_MARKER,
+        marker_style: theme::current().thinking,
+        label: THINKING_LABEL,
         text_style: theme::current().thinking,
-        prefix_style: theme::current().thinking,
         use_markdown: true,
         max_line_bytes: None,
     }
@@ -84,9 +101,10 @@ pub fn thinking_style() -> RoleStyle {
 
 pub fn error_style() -> RoleStyle {
     RoleStyle {
-        prefix: "",
+        marker: "",
+        marker_style: theme::current().tool_error,
+        label: "",
         text_style: theme::current().error,
-        prefix_style: theme::current().tool_error,
         use_markdown: false,
         max_line_bytes: None,
     }
@@ -94,9 +112,10 @@ pub fn error_style() -> RoleStyle {
 
 pub fn notice_style() -> RoleStyle {
     RoleStyle {
-        prefix: "",
+        marker: "",
+        marker_style: theme::current().tool_dim,
+        label: "",
         text_style: theme::current().tool_dim,
-        prefix_style: theme::current().tool_dim,
         use_markdown: false,
         max_line_bytes: None,
     }
@@ -104,11 +123,10 @@ pub fn notice_style() -> RoleStyle {
 
 pub fn done_style() -> RoleStyle {
     RoleStyle {
-        prefix: "",
-        text_style: theme::current()
-            .tool_success
-            .add_modifier(ratatui::style::Modifier::BOLD),
-        prefix_style: theme::current().tool_success,
+        marker: "",
+        marker_style: theme::current().tool_success,
+        label: "",
+        text_style: theme::current().tool_success.add_modifier(Modifier::BOLD),
         use_markdown: false,
         max_line_bytes: None,
     }
@@ -1905,5 +1923,21 @@ mod tests {
         let header_line = tl.lines.first().expect("header line");
         let dot = header_line.spans.last().expect("baked dot span");
         assert_eq!(dot.content.as_ref(), TOOL_INDICATOR);
+    }
+}
+
+#[cfg(test)]
+mod role_style_tests {
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(user_style(), USER_MARKER, "" ; "user")]
+    #[test_case(assistant_style(), ASSISTANT_MARKER, "" ; "assistant")]
+    #[test_case(thinking_style(), ASSISTANT_MARKER, THINKING_LABEL ; "thinking")]
+    #[test_case(error_style(), "", "" ; "error")]
+    #[test_case(notice_style(), "", "" ; "notice")]
+    #[test_case(done_style(), "", "" ; "done")]
+    fn role_marker_and_label(style: RoleStyle, marker: &str, label: &str) {
+        assert_eq!((style.marker, style.label), (marker, label));
     }
 }

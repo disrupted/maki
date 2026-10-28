@@ -14,6 +14,20 @@ use std::mem;
 use std::ops::Range;
 
 pub(crate) const GUTTER_COLS: u16 = 2;
+
+/// The one place the narrow-pane rule lives, so the layout and the renderers
+/// that pre-wrap to the body width cannot drift apart.
+pub(crate) fn gutter_cols(has_gutter: bool, width: u16) -> u16 {
+    if has_gutter && width > GUTTER_COLS {
+        GUTTER_COLS
+    } else {
+        0
+    }
+}
+
+pub(crate) fn body_width(has_gutter: bool, width: u16) -> u16 {
+    width - gutter_cols(has_gutter, width)
+}
 const INST_SUFFIX: &str = "__inst";
 
 pub fn is_instruction_segment(id: &str) -> bool {
@@ -159,15 +173,11 @@ impl Segment {
     /// Columns reserved left of the body at `width`. Zero without a gutter, and
     /// zero when the pane is too narrow to give the body any room.
     pub fn gutter_cols(&self, width: u16) -> u16 {
-        if self.gutter.is_some() && width > GUTTER_COLS {
-            GUTTER_COLS
-        } else {
-            0
-        }
+        gutter_cols(self.gutter.is_some(), width)
     }
 
     pub fn body_width(&self, width: u16) -> u16 {
-        width - self.gutter_cols(width)
+        body_width(self.gutter.is_some(), width)
     }
 
     pub fn text_height(&self, width: u16) -> u16 {
