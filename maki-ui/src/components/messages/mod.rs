@@ -1608,7 +1608,7 @@ fn message_gutter(msg: &DisplayMessage, style: &RoleStyle) -> Option<Span<'stati
 fn message_search_text(msg: &DisplayMessage) -> String {
     let style = message_style(&msg.role);
     let marker = if message_gutter(msg, &style).is_some() {
-        style.marker
+        style.marker.trim_start()
     } else {
         ""
     };

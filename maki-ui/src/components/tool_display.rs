@@ -35,6 +35,7 @@ pub struct RenderCtx<'a> {
 pub const TOOL_INDICATOR: &str = "● ";
 const ASSISTANT_MARKER: &str = TOOL_INDICATOR;
 const USER_MARKER: &str = "❯ ";
+const BLANK_MARKER: &str = "  ";
 const THINKING_LABEL: &str = "thinking> ";
 pub const TOOL_BODY_INDENT: &str = "  ";
 pub(crate) const SPINNER_STYLE_NAME: &str = "spinner";
@@ -101,7 +102,7 @@ pub fn thinking_style() -> RoleStyle {
 
 pub fn error_style() -> RoleStyle {
     RoleStyle {
-        marker: "",
+        marker: BLANK_MARKER,
         marker_style: theme::current().tool_error,
         label: "",
         text_style: theme::current().error,
@@ -112,7 +113,7 @@ pub fn error_style() -> RoleStyle {
 
 pub fn notice_style() -> RoleStyle {
     RoleStyle {
-        marker: "",
+        marker: BLANK_MARKER,
         marker_style: theme::current().tool_dim,
         label: "",
         text_style: theme::current().tool_dim,
@@ -123,7 +124,7 @@ pub fn notice_style() -> RoleStyle {
 
 pub fn done_style() -> RoleStyle {
     RoleStyle {
-        marker: "",
+        marker: BLANK_MARKER,
         marker_style: theme::current().tool_success,
         label: "",
         text_style: theme::current().tool_success.add_modifier(Modifier::BOLD),
@@ -1934,9 +1935,9 @@ mod role_style_tests {
     #[test_case(user_style(), USER_MARKER, "" ; "user")]
     #[test_case(assistant_style(), ASSISTANT_MARKER, "" ; "assistant")]
     #[test_case(thinking_style(), ASSISTANT_MARKER, THINKING_LABEL ; "thinking")]
-    #[test_case(error_style(), "", "" ; "error")]
-    #[test_case(notice_style(), "", "" ; "notice")]
-    #[test_case(done_style(), "", "" ; "done")]
+    #[test_case(error_style(), BLANK_MARKER, "" ; "error")]
+    #[test_case(notice_style(), BLANK_MARKER, "" ; "notice")]
+    #[test_case(done_style(), BLANK_MARKER, "" ; "done")]
     fn role_marker_and_label(style: RoleStyle, marker: &str, label: &str) {
         assert_eq!((style.marker, style.label), (marker, label));
     }

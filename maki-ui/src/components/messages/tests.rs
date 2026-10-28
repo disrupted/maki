@@ -3034,6 +3034,15 @@ fn user_message_has_marker_and_indented_wrap() {
 }
 
 #[test]
+fn error_message_sits_behind_blank_gutter() {
+    let mut panel = MessagesPanel::new(UiConfig::default(), EventHandle::disconnected_for_test());
+    panel.push(DisplayMessage::new(DisplayRole::Error, ERROR_TEXT.into()));
+    let rows = screen_rows(&mut panel);
+    let body = body_rows(&rows);
+    assert_eq!(body[0].trim_end(), format!("{GUTTER_INDENT}{ERROR_TEXT}"));
+}
+
+#[test]
 fn assistant_streaming_rows_indented_before_flush() {
     let mut panel = MessagesPanel::new(UiConfig::default(), EventHandle::disconnected_for_test());
     panel.streaming_text.set_buffer(LONG_PROSE);
