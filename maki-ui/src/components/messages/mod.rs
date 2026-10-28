@@ -416,7 +416,8 @@ impl MessagesPanel {
             .get(&inst_id)
             .copied()
             .unwrap_or_default();
-        let tl = build_instructions_lines(blocks, self.viewport_width, exp.output);
+        let tl =
+            build_instructions_lines(blocks, body_width(true, self.viewport_width), exp.output);
 
         // The spacer gets its line only now. Empty means no rows, so a tool
         // that never sends instructions leaves no gap behind.
@@ -1268,7 +1269,7 @@ impl MessagesPanel {
     fn rctx(&self) -> RenderCtx<'_> {
         RenderCtx {
             started_at: self.started_at,
-            width: self.viewport_width,
+            width: body_width(true, self.viewport_width),
             tool_output_lines: &self.tool_output_lines,
         }
     }

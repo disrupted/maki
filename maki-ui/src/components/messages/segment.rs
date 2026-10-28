@@ -15,8 +15,9 @@ use std::ops::Range;
 
 pub(crate) const GUTTER_COLS: u16 = 2;
 
-/// The one place the narrow-pane rule lives, so the layout and the renderers
-/// that pre-wrap to the body width cannot drift apart.
+/// Safety guard against a zero body width on a pane no wider than the gutter,
+/// not a layout feature. It is the one place the rule lives, so the layout and
+/// the renderers that pre-wrap to the body width cannot drift apart.
 pub(crate) fn gutter_cols(has_gutter: bool, width: u16) -> u16 {
     if has_gutter && width > GUTTER_COLS {
         GUTTER_COLS
@@ -73,6 +74,8 @@ pub(super) struct Segment {
     pub tool_id: Option<String>,
     /// First-row marker drawn in a `GUTTER_COLS` wide column left of the body.
     pub gutter: Option<Span<'static>>,
+    /// The gutter holds a spinner frame, advanced by `update_spinners`.
+    gutter_spins: bool,
     /// Backlink to `self.messages`, set only by `with_lines`. A click on a
     /// collapsed thinking view has no tool_id to route by, so this is how
     /// the click finds its message. It looks unused; delete it and the
@@ -227,6 +230,9 @@ impl Segment {
     }
 
     pub fn update_spinners(&mut self, span: &Span<'static>) {
+        if self.gutter_spins {
+            self.gutter = Some(span.clone());
+        }
         for &(line_idx, span_idx) in &self.spinner_lines {
             if let Some(line) = self.lines.get_mut(line_idx)
                 && line.spans.len() > span_idx
@@ -259,6 +265,8 @@ impl Segment {
         self.highlight_range = tl.highlight.as_ref().map(|h| h.range);
         self.highlight_key = HighlightKey::from_request(tl.highlight.as_ref());
         self.spinner_lines = tl.spinner_lines;
+        self.gutter = tl.gutter;
+        self.gutter_spins = tl.gutter_spins;
         self.snapshot_base = tl.snapshot_base;
         self.content_indent = tl.content_indent;
         self.truncation = tl.truncation;
@@ -276,6 +284,8 @@ impl Segment {
         });
         self.truncation = tl.truncation;
         if let Some((s, e)) = reused {
+            self.gutter = tl.gutter;
+            self.gutter_spins = tl.gutter_spins;
             self.set_lines(tl.lines);
             self.highlight_range = Some((s, e));
             self.pending_highlight = None;
@@ -575,6 +585,34 @@ mod tests {
             vec![(0, 0), (5usize.saturating_add_signed(delta), 1)],
             "positions before the splice stay, after it shift by the delta"
         );
+    }
+
+    fn tool_lines(gutter: Span<'static>, gutter_spins: bool) -> ToolLines {
+        ToolLines {
+            lines: vec![Line::raw("header")],
+            highlight: None,
+            spinner_lines: vec![],
+            gutter: Some(gutter),
+            gutter_spins,
+            snapshot_base: None,
+            content_indent: "",
+            truncation: SectionFlags::default(),
+        }
+    }
+
+    #[test]
+    fn update_spinners_animates_gutter_only_while_spinning() {
+        let worker = RenderWorker::new();
+        let frame = Span::styled("*", theme::current().spinner);
+        let mut seg = Segment::with_tool("t".into());
+        seg.apply_highlight(tool_lines(Span::raw("-"), true), &worker);
+        seg.update_spinners(&frame);
+        assert_eq!(seg.gutter.as_ref(), Some(&frame));
+
+        let dot = Span::styled("●", theme::current().tool_success);
+        seg.update_with_reuse(tool_lines(dot.clone(), false), &worker);
+        seg.update_spinners(&frame);
+        assert_eq!(seg.gutter, Some(dot), "finished dot must not animate");
     }
 
     const WIDTH: u16 = 20;

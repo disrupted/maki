@@ -137,6 +137,9 @@ pub struct ToolLines {
     pub lines: Vec<Line<'static>>,
     pub highlight: Option<HighlightRequest>,
     pub spinner_lines: Vec<(usize, usize)>,
+    pub gutter: Option<Span<'static>>,
+    /// The gutter shows a spinner frame that `Segment::update_spinners` advances.
+    pub gutter_spins: bool,
     /// Index of the first live-buffer snapshot line, recorded in the same
     /// pass that lays out `lines`, so click rows can never drift from them.
     pub snapshot_base: Option<usize>,
@@ -320,6 +323,7 @@ fn resolve_output<'a>(
 struct ToolLineBuilder {
     lines: Vec<Line<'static>>,
     spinner_lines: Vec<(usize, usize)>,
+    gutter: Option<Span<'static>>,
     snapshot_base: Option<usize>,
     content_range: (usize, usize),
     width: u16,
@@ -340,6 +344,7 @@ impl ToolLineBuilder {
         Self {
             lines: Vec::new(),
             spinner_lines: Vec::new(),
+            gutter: None,
             snapshot_base: None,
             content_range: (0, 0),
             width,
@@ -393,26 +398,14 @@ impl ToolLineBuilder {
         self.lines.push(Line::from(spans));
     }
 
-    fn prepend_indicator(&mut self, started_at: Instant) {
-        if self.lines.is_empty() {
-            return;
-        }
-        let (text, style) = match self.indicator {
+    fn set_gutter(&mut self, started_at: Instant) {
+        self.gutter = Some(match self.indicator {
             Indicator::InProgress => {
                 let ch = spinner_frame(started_at.elapsed().as_millis());
-                (format!("{ch} "), theme::current().spinner)
+                Span::styled(format!("{ch} "), theme::current().spinner)
             }
-            finished => (TOOL_INDICATOR.into(), finished_style(finished)),
-        };
-        for (line, span) in &mut self.spinner_lines {
-            if *line == 0 {
-                *span += 1;
-            }
-        }
-        if matches!(self.indicator, Indicator::InProgress) {
-            self.spinner_lines.push((0, 0));
-        }
-        self.lines[0].spans.insert(0, Span::styled(text, style));
+            finished => Span::styled(TOOL_INDICATOR, finished_style(finished)),
+        });
     }
 
     fn push_code_content(&mut self, input: Option<&ToolInput>, output: Option<&ToolOutput>) {
@@ -499,6 +492,8 @@ impl ToolLineBuilder {
             lines: self.lines,
             highlight,
             spinner_lines: self.spinner_lines,
+            gutter: self.gutter,
+            gutter_spins: matches!(self.indicator, Indicator::InProgress),
             snapshot_base: self.snapshot_base,
             content_indent,
             truncation: self.truncation,
@@ -646,7 +641,7 @@ pub fn build_tool_lines(
         msg.annotation.as_deref(),
         msg.render_header.as_ref(),
     );
-    b.prepend_indicator(rctx.started_at);
+    b.set_gutter(rctx.started_at);
     let has_snapshot = msg.render_snapshot.is_some();
     b.push_code_content(
         msg.tool_input.as_deref(),
@@ -805,7 +800,7 @@ pub fn build_instructions_lines(
         Indicator::Success,
     );
     b.push_header(INSTRUCTIONS_TOOL, header, annotation.as_deref(), None);
-    b.prepend_indicator(Instant::now());
+    b.set_gutter(Instant::now());
 
     let start = b.lines.len();
     let has_truncation =
@@ -1268,8 +1263,26 @@ mod tests {
             &test_rctx(80),
             SectionFlags::default(),
         );
-        // indicator + `tool> ` prefix + "3 tools " sit before the header spinner.
-        assert_eq!(tl.spinner_lines, vec![(0, 3), (0, 0)]);
+        // `tool> ` prefix + "3 tools " sit before the header spinner.
+        assert_eq!(tl.spinner_lines, vec![(0, 2)]);
+        assert!(tl.gutter_spins);
+    }
+
+    #[test_case(ToolStatus::Success, TOOL_INDICATOR, theme::current().tool_success ; "success")]
+    #[test_case(ToolStatus::Error, TOOL_INDICATOR, theme::current().tool_error ; "error")]
+    fn finished_tool_puts_styled_dot_in_gutter(status: ToolStatus, dot: &str, style: Style) {
+        let tl = build_tool_lines(&tool_msg(), status, &test_rctx(80), SectionFlags::default());
+        let gutter = tl.gutter.expect("tool gutter");
+        assert_eq!(gutter.content.as_ref(), dot);
+        assert_eq!(gutter.style, style);
+        assert!(!tl.gutter_spins);
+        assert!(
+            tl.lines[0]
+                .spans
+                .iter()
+                .all(|s| s.content.as_ref() != TOOL_INDICATOR),
+            "header line must not carry the indicator"
+        );
     }
 
     const DENIAL_MSG: &str = "Permission denied: user rejected";
