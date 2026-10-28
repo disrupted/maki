@@ -90,7 +90,6 @@ pub(super) struct Segment {
     highlight_key: HighlightKey,
     pub spinner_lines: Vec<(usize, usize)>,
     snapshot_base: Option<usize>,
-    pub content_indent: &'static str,
     /// The lines were built for another width or theme, so code blocks and
     /// tables are still wrapped to the old width and spans carry the old
     /// palette. Only the content ages, never the height, so a segment the
@@ -268,7 +267,6 @@ impl Segment {
         self.gutter = tl.gutter;
         self.gutter_spins = tl.gutter_spins;
         self.snapshot_base = tl.snapshot_base;
-        self.content_indent = tl.content_indent;
         self.truncation = tl.truncation;
         self.set_lines(tl.lines);
     }
@@ -291,7 +289,6 @@ impl Segment {
             self.pending_highlight = None;
             self.spinner_lines = tl.spinner_lines;
             self.snapshot_base = tl.snapshot_base;
-            self.content_indent = tl.content_indent;
         } else {
             self.apply_highlight(tl, worker);
         }
@@ -303,18 +300,8 @@ impl Segment {
 
     pub fn apply_highlight_result(&mut self, lines: Vec<Line<'static>>) {
         if let Some((start, end)) = self.highlight_range {
-            let indent = self.content_indent;
-            let indented: Vec<Line<'static>> = lines
-                .into_iter()
-                .map(|mut line| {
-                    if !indent.is_empty() {
-                        line.spans.insert(0, Span::raw(indent));
-                    }
-                    line
-                })
-                .collect();
-            let new_end = start + indented.len();
-            self.lines.splice(start..end, indented);
+            let new_end = start + lines.len();
+            self.lines.splice(start..end, lines);
             self.highlight_range = Some((start, new_end));
             self.shift_after(end, new_end as isize - end as isize);
             self.invalidate_height();
@@ -595,7 +582,6 @@ mod tests {
             gutter: Some(gutter),
             gutter_spins,
             snapshot_base: None,
-            content_indent: "",
             truncation: SectionFlags::default(),
         }
     }

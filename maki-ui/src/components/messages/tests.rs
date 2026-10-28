@@ -3093,6 +3093,47 @@ fn resize_rewraps_gutter_message_without_reflow() {
 }
 
 #[test]
+fn long_tool_output_wraps_at_gutter_column_and_copy_excludes_gutter() {
+    const WIDTH: u16 = 40;
+    const TOKEN: &str = "abcdefghij";
+    let body = format!("{TOKEN} ").repeat(12);
+    let body = body.trim_end();
+    let mut panel = MessagesPanel::new(UiConfig::default(), EventHandle::disconnected_for_test());
+    panel.tool_start(start("t1", BASH_TOOL_NAME));
+    panel.tool_done(ToolDoneEvent {
+        call: None,
+        id: "t1".into(),
+        tool: BASH_TOOL_NAME.into(),
+        output: Arc::new(ToolOutput::Plain(body.into())),
+        is_error: false,
+        annotation: None,
+        written_path: None,
+    });
+    let terminal = render(&mut panel, WIDTH, 24);
+    let rows: Vec<String> = buffer_text(&terminal)
+        .lines()
+        .map(|row| row.trim_end().to_owned())
+        .collect();
+    let body_rows: Vec<&String> = rows.iter().filter(|r| r.contains(TOKEN)).collect();
+    let gutter = " ".repeat(GUTTER_COLS as usize);
+    assert!(body_rows.len() >= 2, "output should wrap: {rows:?}");
+    for row in &body_rows {
+        assert!(
+            row.starts_with(&format!("{gutter}{TOKEN}")),
+            "row not at col {GUTTER_COLS}: {row:?}"
+        );
+    }
+
+    let area = Rect::new(0, 0, WIDTH, 24);
+    let sel = make_sel(&panel, area, (0, 0), (23, WIDTH - 1));
+    let copied = panel.extract_selection_text(&sel, area);
+    assert!(
+        copied.lines().all(|l| !l.starts_with(' ')),
+        "copy kept the gutter: {copied:?}"
+    );
+}
+
+#[test]
 fn copy_user_message_excludes_marker() {
     let mut panel = panel_with_msgs(&[], 80, 24);
     panel.push(DisplayMessage::new(DisplayRole::User, "hello".into()));
