@@ -3092,3 +3092,23 @@ fn copy_user_message_excludes_marker() {
     let sel = make_sel(&panel, area, (0, 0), (0, 79));
     assert_eq!(panel.extract_selection_text(&sel, area), "hello");
 }
+
+#[test]
+fn user_message_bg_covers_gutter_and_body_but_not_the_spacer() {
+    const USER_TEXT: &str = "hello";
+    const SPACER_ROW: u16 = 1;
+    let mut panel = MessagesPanel::new(UiConfig::default(), EventHandle::disconnected_for_test());
+    panel.push(DisplayMessage::new(DisplayRole::User, USER_TEXT.into()));
+    panel.push(DisplayMessage::new(DisplayRole::Assistant, "reply".into()));
+    let terminal = render(&mut panel, VIEW_WIDTH, VIEW_HEIGHT);
+    let buf = terminal.backend().buffer();
+    let tint = theme::current().user_message_bg.bg.expect("tinted theme");
+
+    let body_end = GUTTER_COLS + USER_TEXT.len() as u16;
+    for x in 0..body_end {
+        assert_eq!(buf.cell((x, 0)).unwrap().bg, tint, "col {x}");
+    }
+    for x in 0..VIEW_WIDTH {
+        assert_ne!(buf.cell((x, SPACER_ROW)).unwrap().bg, tint, "col {x}");
+    }
+}
