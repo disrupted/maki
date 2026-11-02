@@ -31,7 +31,7 @@ use maki_agent::{
     SessionMailbox, Transcript, mcp,
 };
 use maki_config::project::TrustQuestion;
-use maki_config::{ModelPolicy, ProjectConfig, UiConfig};
+use maki_config::{ModelPolicy, MouseScrollLines, ProjectConfig, UiConfig};
 use maki_lua::agent_autocmd::HostEvent;
 use maki_lua::session_snapshot::{
     MODE_BUILD, MODE_PLAN, STATUS_IDLE, STATUS_NEEDS_INPUT, STATUS_WORKING, SessionQueueSnapshot,
@@ -76,6 +76,7 @@ use crate::decor_worker;
 use crate::input::InputReader;
 use crate::repaint::{Dirty, IDLE_POLL};
 use crate::theme;
+use crate::wheel::WheelScroll;
 use crate::{AppSession, OpenSession};
 
 use crate::storage_writer::StorageWriter;
@@ -518,6 +519,7 @@ pub(crate) struct EventLoop<'t> {
     ctx: SpawnCtx,
     slots: ModelSlots,
     input: InputReader,
+    wheel: WheelScroll,
     warn_rx: flume::Receiver<String>,
     warn_tx: flume::Sender<String>,
     models_rx: flume::Receiver<()>,
@@ -780,6 +782,7 @@ impl<'t> EventLoop<'t> {
             ctx,
             slots,
             input: InputReader::new().context("watch terminal input")?,
+            wheel: WheelScroll::default(),
             warn_rx: bg.warn_rx,
             warn_tx: bg.warn_tx,
             models_rx: bg.models_rx,
@@ -1846,8 +1849,8 @@ impl<'t> EventLoop<'t> {
     fn translate_mouse(&mut self, mouse: CtMouseEvent) -> (Option<Msg>, Option<Event>) {
         match mouse.kind {
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                let scroll_lines = self.focused_app().ui_config.mouse_scroll_lines;
-                let (msg, leftover) = self.aggregate_scroll(mouse, scroll_lines);
+                let setting = self.focused_app().ui_config.mouse_scroll_lines;
+                let (msg, leftover) = self.aggregate_scroll(mouse, setting);
                 (Some(msg), leftover)
             }
             MouseEventKind::Drag(MouseButton::Left) => {
@@ -1860,25 +1863,25 @@ impl<'t> EventLoop<'t> {
 
     /// Sums queued scroll events into one delta; the first non-scroll event
     /// drained along the way is returned so it isn't lost.
-    fn aggregate_scroll(&self, first: CtMouseEvent, scroll_lines: u32) -> (Msg, Option<Event>) {
-        let mut delta = scroll_delta(first.kind, scroll_lines);
+    fn aggregate_scroll(
+        &mut self,
+        first: CtMouseEvent,
+        setting: MouseScrollLines,
+    ) -> (Msg, Option<Event>) {
+        let mut ups = u32::from(first.kind == MouseEventKind::ScrollUp);
+        let mut downs = 1 - ups;
         let mut leftover = None;
         while let Some(next) = self.input.try_next() {
             match next {
-                Event::Mouse(m)
-                    if matches!(
-                        m.kind,
-                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                    ) =>
-                {
-                    delta += scroll_delta(m.kind, scroll_lines);
-                }
+                Event::Mouse(m) if m.kind == MouseEventKind::ScrollUp => ups += 1,
+                Event::Mouse(m) if m.kind == MouseEventKind::ScrollDown => downs += 1,
                 other => {
                     leftover = Some(other);
                     break;
                 }
             }
         }
+        let delta = self.wheel.delta(setting, ups, downs, Instant::now());
         (
             Msg::Scroll {
                 column: first.column,
@@ -2268,14 +2271,6 @@ impl<'t> EventLoop<'t> {
             unsaved,
             mailboxes,
         }
-    }
-}
-
-fn scroll_delta(kind: MouseEventKind, lines: u32) -> i32 {
-    if kind == MouseEventKind::ScrollUp {
-        lines as i32
-    } else {
-        -(lines as i32)
     }
 }
 

@@ -23,8 +23,8 @@ use maki_agent::{
     ToolOutput, TurnCompleteEvent,
 };
 use maki_config::{
-    AlwaysThinking, EDIT_SUB_TOOLS, Effect, FILE_WRITE_TOOLS, Permission, PluginsConfig,
-    ThinkingLines, ToolKey, ToolOutputLines,
+    AlwaysThinking, EDIT_SUB_TOOLS, Effect, FILE_WRITE_TOOLS, MouseScrollLines, Permission,
+    PluginsConfig, ThinkingLines, ToolKey, ToolOutputLines,
 };
 use maki_lua::test_support::runtime;
 use maki_lua::{
@@ -3810,7 +3810,7 @@ fn setup_all_sections_at_once() {
         Some(AlwaysThinking::Mode("adaptive".into()))
     );
     assert_eq!(raw.ui.splash_animation, Some(false));
-    assert_eq!(raw.ui.mouse_scroll_lines, Some(5));
+    assert_eq!(raw.ui.mouse_scroll_lines, Some(MouseScrollLines::Fixed(5)));
     assert_eq!(raw.agent.max_output_lines, Some(9000));
     assert_eq!(
         raw.agent.compaction_instructions.as_deref(),
