@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use maki_agent::tools::ToolRegistry;
 use maki_config::{
-    AgentConfig, ConfigField, NetConfig, ProviderConfig, StorageConfig, TelemetryConfig,
-    ToolOutputLines, UiConfig, DEFAULT_MAX_LOG_FILES, DEFAULT_MAX_OUTPUT_LINES,
-    DEFAULT_MOUSE_SCROLL_LINES, MIN_TOOL_OUTPUT_LINES, TOP_LEVEL_FIELDS,
+    AgentConfig, ConfigField, DEFAULT_MAX_LOG_FILES, DEFAULT_MAX_OUTPUT_LINES,
+    DEFAULT_MOUSE_SCROLL_LINES, MIN_TOOL_OUTPUT_LINES, NetConfig, ProviderConfig, StorageConfig,
+    TOP_LEVEL_FIELDS, TelemetryConfig, ToolOutputLines, UiConfig,
 };
 use maki_lua::{PluginHost, PluginOptionSpecs};
 

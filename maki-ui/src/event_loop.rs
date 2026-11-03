@@ -9,6 +9,7 @@
 //! it runs under `block_on` on the main thread.
 
 use std::future::{pending, ready};
+use std::io::Write;
 use std::mem;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
@@ -53,6 +54,8 @@ use maki_storage::StateDir;
 use maki_storage::id::{MakiId, MakiIdParseError, SessionRef};
 use maki_storage::model::persist_model;
 use maki_storage::sessions::normalize_title;
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use serde_json::json;
 use tokio::runtime::Handle;
@@ -799,15 +802,8 @@ impl<'t> EventLoop<'t> {
         &mut self.sessions[self.focused].app
     }
 
-    /// Paints a frame as one synchronized update, so the terminal shows it
-    /// whole. Terminals without synchronized output ignore it, and the cursor
-    /// is hidden while the diff is written either way, or it would ride along
-    /// with every cell written.
     fn paint(&mut self) -> Result<()> {
-        queue!(self.terminal.backend_mut(), BeginSynchronizedUpdate, Hide)?;
-        let painted = paint_frame(self.terminal, &mut self.sessions[self.focused].app);
-        execute!(self.terminal.backend_mut(), EndSynchronizedUpdate)?;
-        painted
+        paint_frame(self.terminal, &mut self.sessions[self.focused].app)
     }
 
     pub(crate) async fn run(mut self, initial_prompt: Option<String>) -> Result<ShutdownReport> {
@@ -2250,15 +2246,24 @@ impl<'t> EventLoop<'t> {
     }
 }
 
-/// The cursor is placed after the draw rather than through
+/// Paints a frame as one synchronized update, so the terminal shows it whole.
+/// Terminals without synchronized output ignore it, and the cursor is hidden
+/// while the diff is written either way, or it would ride along with every
+/// cell written. It is placed after the draw rather than through
 /// `Frame::set_cursor_position`, because ratatui shows it before moving it.
-fn paint_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
+fn paint_frame<W: Write>(
+    terminal: &mut Terminal<CrosstermBackend<W>>,
+    app: &mut App,
+) -> Result<()> {
+    queue!(terminal.backend_mut(), BeginSynchronizedUpdate, Hide)?;
     let mut caret = None;
-    terminal.draw(|f| {
-        caret = app.view(f);
-        color_compat::downgrade_if_needed(f.buffer_mut());
-    })?;
-    if let Some(pos) = caret {
+    let drawn = terminal
+        .draw(|f| {
+            caret = app.view(f);
+            color_compat::downgrade_if_needed(f.buffer_mut());
+        })
+        .map(|_| ());
+    if let (Ok(()), Some(pos)) = (&drawn, caret) {
         queue!(
             terminal.backend_mut(),
             crate::terminal::cursor_style(app.cursor_shape())
@@ -2266,6 +2271,8 @@ fn paint_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result
         terminal.set_cursor_position(pos)?;
         terminal.show_cursor()?;
     }
+    execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
+    drawn?;
     Ok(())
 }
 
@@ -2280,14 +2287,38 @@ fn scroll_delta(kind: MouseEventKind, lines: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::tests::{MOVED_ID, app_with_moved_call, end_turn};
+    use crate::app::tests::{MOVED_ID, app_with_moved_call, end_turn, test_app};
     use crate::components::BackgroundOutcome;
     use maki_agent::DoneReason;
     use maki_providers::TokenUsage;
+    use ratatui::{TerminalOptions, Viewport};
     use test_case::test_case;
 
     const OBSERVATION: &str = "failed";
+    const BEGIN_SYNC_AND_HIDE: &str = "\x1b[?2026h\x1b[?25l";
+    const SHOW_AND_END_SYNC: &str = "\x1b[?25h\x1b[?2026l";
+    const SHOW_CURSOR: &str = "\x1b[?25h";
+    const TEST_VIEWPORT: Rect = Rect::new(0, 0, 80, 24);
     const SHELL_RESULT: &str = "command finished";
+
+    #[test]
+    fn paint_frame_hides_the_cursor_before_the_diff_and_shows_it_after() {
+        let mut bytes = Vec::new();
+        let mut terminal = Terminal::with_options(
+            CrosstermBackend::new(&mut bytes),
+            TerminalOptions {
+                viewport: Viewport::Fixed(TEST_VIEWPORT),
+            },
+        )
+        .unwrap();
+        paint_frame(&mut terminal, &mut test_app()).unwrap();
+        drop(terminal);
+
+        let written = String::from_utf8(bytes).unwrap();
+        assert!(written.starts_with(BEGIN_SYNC_AND_HIDE), "{written:?}");
+        assert!(written.ends_with(SHOW_AND_END_SYNC), "{written:?}");
+        assert_eq!(written.matches(SHOW_CURSOR).count(), 1, "{written:?}");
+    }
 
     fn done_event() -> AgentEvent {
         AgentEvent::Done {
