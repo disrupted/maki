@@ -79,7 +79,8 @@ pub const MIN_MAX_TURN_OUTPUT: u32 = 1_024;
 const MAX_COMPACTION_PERCENT: u8 = 99;
 const COMPACTION_BUFFER_EXPECTED: &str =
     r#"a token count (e.g. 12000) or a percent of the context window (e.g. "20%")"#;
-pub const MIN_MOUSE_SCROLL_LINES: u32 = 1;
+const MOUSE_SCROLL_LINES_EXPECTED: &str = r#""auto" or a line count of at least 1"#;
+const MOUSE_SCROLL_AUTO: &str = "auto";
 pub const MIN_TOOL_OUTPUT_LINES: usize = 1;
 pub const MIN_MAX_LOG_BYTES_MB: u64 = 1;
 pub const MIN_MAX_LOG_FILES: u32 = 1;
@@ -666,7 +667,7 @@ pub struct UiFileConfig {
     pub notifications: Option<NotificationMethod>,
     pub flash_duration_ms: Option<u64>,
     pub typewriter_ms_per_char: Option<u64>,
-    pub mouse_scroll_lines: Option<u32>,
+    pub mouse_scroll_lines: Option<MouseScrollLines>,
     pub thinking_lines: Option<ThinkingLines>,
     /// Gone, replaced by `thinking_lines`. We still read it so an old config
     /// gets told about the new key, not a vague unknown-field error.
@@ -723,6 +724,54 @@ impl<'de> Deserialize<'de> for ThinkingLines {
                 .map(Self::Tail)
                 .map_err(|_| D::Error::custom(THINKING_LINES_RANGE)),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseScrollLines {
+    /// One line for slow scrolling, more as the wheel speeds up.
+    Auto,
+    Fixed(u32),
+}
+
+impl<'de> Deserialize<'de> for MouseScrollLines {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct LinesVisitor;
+
+        impl serde::de::Visitor<'_> for LinesVisitor {
+            type Value = MouseScrollLines;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(MOUSE_SCROLL_LINES_EXPECTED)
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                u32::try_from(v)
+                    .ok()
+                    .filter(|n| *n >= 1)
+                    .map(MouseScrollLines::Fixed)
+                    .ok_or_else(|| {
+                        E::custom(format!(
+                            "invalid mouse_scroll_lines {v}: expected {MOUSE_SCROLL_LINES_EXPECTED}"
+                        ))
+                    })
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                self.visit_u64(u64::try_from(v).unwrap_or(0))
+            }
+
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                if s == MOUSE_SCROLL_AUTO {
+                    return Ok(MouseScrollLines::Auto);
+                }
+                Err(E::custom(format!(
+                    "invalid mouse_scroll_lines {s:?}: expected {MOUSE_SCROLL_LINES_EXPECTED}"
+                )))
+            }
+        }
+
+        d.deserialize_any(LinesVisitor)
     }
 }
 
@@ -1359,8 +1408,13 @@ pub struct UiConfig {
     #[config(default = DEFAULT_TYPEWRITER_MS_PER_CHAR, desc = "Typewriter effect speed (ms/char)")]
     pub typewriter_ms_per_char: u64,
 
-    #[config(default = DEFAULT_MOUSE_SCROLL_LINES, min = MIN_MOUSE_SCROLL_LINES, desc = "Lines per mouse wheel scroll")]
-    pub mouse_scroll_lines: u32,
+    #[config(
+        default = MouseScrollLines::Fixed(DEFAULT_MOUSE_SCROLL_LINES),
+        ty = "u32 | string",
+        default_doc = "3",
+        desc = "Lines per mouse wheel event. \"auto\" moves one line when scrolling slowly and speeds up with the wheel"
+    )]
+    pub mouse_scroll_lines: MouseScrollLines,
 
     #[config(default = DEFAULT_MAX_INPUT_LINES, min = MIN_MAX_INPUT_LINES, desc = "Maximum visible input lines")]
     pub max_input_lines: u32,
@@ -1414,7 +1468,9 @@ impl UiConfig {
             typewriter_ms_per_char: f
                 .typewriter_ms_per_char
                 .unwrap_or(DEFAULT_TYPEWRITER_MS_PER_CHAR),
-            mouse_scroll_lines: f.mouse_scroll_lines.unwrap_or(DEFAULT_MOUSE_SCROLL_LINES),
+            mouse_scroll_lines: f
+                .mouse_scroll_lines
+                .unwrap_or(MouseScrollLines::Fixed(DEFAULT_MOUSE_SCROLL_LINES)),
             max_input_lines: f.max_input_lines.unwrap_or(DEFAULT_MAX_INPUT_LINES),
             thinking_lines: f
                 .thinking_lines
@@ -3791,7 +3847,6 @@ mod tests {
 
     #[test_case("provider", "connect_timeout_secs", 0 ; "provider_zero_connect_timeout")]
     #[test_case("storage",  "max_log_files",        0 ; "storage_zero_log_files")]
-    #[test_case("ui",       "mouse_scroll_lines",   0 ; "ui_zero_scroll_lines")]
     #[test_case("ui",       "max_input_lines",      0 ; "ui_zero_max_input_lines")]
     #[test_case("agent",    "max_output_lines",     1 ; "agent_output_lines_too_low")]
     fn validate_rejects_invalid_sections(section: &str, field: &str, value: u64) {
@@ -3813,7 +3868,6 @@ mod tests {
                 config.provider.connect_timeout = Duration::from_secs(value)
             }
             ("storage", "max_log_files") => config.storage.max_log_files = value as u32,
-            ("ui", "mouse_scroll_lines") => config.ui.mouse_scroll_lines = value as u32,
             ("ui", "max_input_lines") => config.ui.max_input_lines = value as u32,
             ("agent", "max_output_lines") => config.agent.max_output_lines = value as usize,
             _ => unreachable!(),
@@ -4482,6 +4536,24 @@ mod tests {
             serde_json::json!(900),
             "base opt preserved"
         );
+    }
+
+    #[test_case("\"auto\"", MouseScrollLines::Auto ; "auto_string")]
+    #[test_case("1", MouseScrollLines::Fixed(1) ; "one_line")]
+    #[test_case("5", MouseScrollLines::Fixed(5) ; "fixed_lines")]
+    fn mouse_scroll_lines_deserializes(json: &str, expected: MouseScrollLines) {
+        assert_eq!(
+            serde_json::from_str::<MouseScrollLines>(json).unwrap(),
+            expected
+        );
+    }
+
+    #[test_case("0" ; "zero")]
+    #[test_case("-3" ; "negative")]
+    #[test_case("\"fast\"" ; "unknown_string")]
+    #[test_case("4294967296" ; "overflow")]
+    fn mouse_scroll_lines_rejects(json: &str) {
+        assert!(serde_json::from_str::<MouseScrollLines>(json).is_err());
     }
 
     #[test_case(-1 => ThinkingLines::Never ; "minus_one_never_collapses")]
