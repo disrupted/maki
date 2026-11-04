@@ -33,12 +33,12 @@ use crate::providers::openai_compat::{
     DEFAULT_MAX_TOKENS_FIELD, OpenAiCompatConfig, OpenAiCompatProvider,
 };
 use crate::providers::{
-    ResolvedAuth, Timeouts, body_reader, http_client, opencode, plugin, send_request,
+    ResolvedAuth, Timeouts, body_reader, http_client, ok_text, opencode, plugin, send_request,
     status_and_text, user_agent,
 };
 use crate::spec::ProviderRegistry;
 use crate::{
-    AgentError, EffortDialect, Message, ProviderEvent, RequestOptions, StreamResponse,
+    AgentError, EffortDialect, Message, ProviderEvent, ProviderUsage, RequestOptions, StreamResponse,
     ThinkingConfig, dialect,
 };
 
@@ -62,7 +62,10 @@ pub(crate) const CATALOG_BACKED_BUILTINS: &[&str] = opencode::SLUGS;
 const CHAT_DIALECT: EffortDialect<'static> = dialect::PREFER_HIGH;
 
 /// Provider modules own their entry here; the catalog only reads it.
-const QUIRKS: &[(&[&str], ProviderQuirks)] = &[(opencode::SLUGS, opencode::QUIRKS)];
+const QUIRKS: &[(&[&str], ProviderQuirks)] = &[
+    (&[opencode::ZEN_SLUG], opencode::ZEN_QUIRKS),
+    (&[opencode::GO_SLUG], opencode::GO_QUIRKS),
+];
 
 const CATALOG_URL: &str = "https://models.dev/api.json";
 const CATALOG_CACHE_FILE: &str = "models-dev-catalog.json";
@@ -88,6 +91,10 @@ pub enum EndpointType {
 pub struct ProviderQuirks {
     pub free_tier: Option<FreeTier>,
     pub session_header: Option<&'static str>,
+    /// Absolute URL of a provider quota endpoint, read by
+    /// [`CatalogProvider::fetch_usage`] and parsed by the owning provider
+    /// module.
+    pub usage_url: Option<&'static str>,
 }
 
 /// A no-key tier that unlocks only zero-priced models, and only after the
@@ -953,6 +960,26 @@ impl Provider for CatalogProvider {
                 .collect())
         })
     }
+
+    fn fetch_usage(&self) -> BoxFuture<'_, Result<Option<ProviderUsage>, AgentError>> {
+        Box::pin(async move {
+            let Some(url) = self.data.quirks.usage_url else {
+                return Ok(None);
+            };
+            let auth = self.auth.unlocked(&self.data.slug)?.clone();
+            let request = auth
+                .configure_request(
+                    self.transport
+                        .client
+                        .get(url)
+                        .header("user-agent", super::user_agent()),
+                )
+                .build()?;
+            let body = ok_text(&self.transport.client, request).await?;
+            // The only endpoint a quirk carries today is OpenCode's.
+            opencode::parse_usage(&body).map(Some)
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1181,7 +1208,7 @@ mod tests {
 
     fn opencode_go_provider_data(env_key: &str) -> ProviderData {
         ProviderData {
-            quirks: opencode::QUIRKS,
+            quirks: opencode::GO_QUIRKS,
             slug: "opencode-go".into(),
             display_name: "Opencode Go".into(),
             env_keys: vec![env_key.into()],
