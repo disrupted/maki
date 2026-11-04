@@ -38,8 +38,8 @@ use crate::providers::{
 };
 use crate::spec::ProviderRegistry;
 use crate::{
-    AgentError, EffortDialect, Message, ProviderEvent, ProviderUsage, RequestOptions, StreamResponse,
-    ThinkingConfig, dialect,
+    AgentError, EffortDialect, Message, ProviderEvent, ProviderUsage, RequestOptions,
+    StreamResponse, ThinkingConfig, dialect,
 };
 
 const MESSAGES_PATH: &str = "/messages";

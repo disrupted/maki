@@ -18,8 +18,8 @@ use crate::spec::{
     ProviderSpec,
 };
 use crate::{
-    AgentError, Message, ProviderEvent, ProviderUsage, RequestOptions, StreamResponse, ThinkingConfig,
-    UsageLimit,
+    AgentError, Message, ProviderEvent, ProviderUsage, RequestOptions, StreamResponse,
+    ThinkingConfig, UsageLimit,
 };
 
 use super::{ResolvedAuth, Timeouts, with_prefix};
@@ -365,7 +365,11 @@ struct GoUsage {
 #[derive(Deserialize)]
 struct GoWindow {
     percent: Option<f64>,
-    #[serde(default, rename = "resetsAt", deserialize_with = "crate::types::deserialize_reset_at")]
+    #[serde(
+        default,
+        rename = "resetsAt",
+        deserialize_with = "crate::types::deserialize_reset_at"
+    )]
     resets_at: Option<u64>,
     status: Option<String>,
 }
