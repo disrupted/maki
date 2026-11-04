@@ -87,14 +87,22 @@ pub enum EndpointType {
 }
 
 /// Behaviour a provider needs beyond what models.dev publishes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ProviderQuirks {
     pub free_tier: Option<FreeTier>,
     pub session_header: Option<&'static str>,
-    /// Absolute URL of a provider quota endpoint, read by
-    /// [`CatalogProvider::fetch_usage`] and parsed by the owning provider
-    /// module.
-    pub usage_url: Option<&'static str>,
+    /// Quota endpoint a [`CatalogProvider::fetch_usage`] reads, with the
+    /// parser that understands the wire it answers.
+    pub usage: Option<UsageEndpoint>,
+}
+
+/// One provider's quota endpoint. `parse` sits beside `url` so the generic
+/// fetch never has to know a wire shape that belongs to the provider module.
+/// No `PartialEq`: comparing fn pointers is not meaningful equality.
+#[derive(Debug, Clone, Copy)]
+pub struct UsageEndpoint {
+    pub url: &'static str,
+    pub parse: fn(&str) -> Result<ProviderUsage, AgentError>,
 }
 
 /// A no-key tier that unlocks only zero-priced models, and only after the
@@ -963,7 +971,7 @@ impl Provider for CatalogProvider {
 
     fn fetch_usage(&self) -> BoxFuture<'_, Result<Option<ProviderUsage>, AgentError>> {
         Box::pin(async move {
-            let Some(url) = self.data.quirks.usage_url else {
+            let Some(endpoint) = self.data.quirks.usage else {
                 return Ok(None);
             };
             let auth = self.auth.unlocked(&self.data.slug)?.clone();
@@ -971,13 +979,12 @@ impl Provider for CatalogProvider {
                 .configure_request(
                     self.transport
                         .client
-                        .get(url)
+                        .get(endpoint.url)
                         .header("user-agent", super::user_agent()),
                 )
                 .build()?;
             let body = ok_text(&self.transport.client, request).await?;
-            // The only endpoint a quirk carries today is OpenCode's.
-            opencode::parse_usage(&body).map(Some)
+            (endpoint.parse)(&body).map(Some)
         })
     }
 }
@@ -1020,7 +1027,6 @@ impl LazyCatalogProvider {
         }
     }
 }
-
 impl Provider for LazyCatalogProvider {
     fn stream_message<'a>(
         &'a self,
@@ -1042,6 +1048,10 @@ impl Provider for LazyCatalogProvider {
 
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<ModelInfo>, AgentError>> {
         Box::pin(async move { self.resolve().await?.list_models().await })
+    }
+
+    fn fetch_usage(&self) -> BoxFuture<'_, Result<Option<ProviderUsage>, AgentError>> {
+        Box::pin(async move { self.resolve().await?.fetch_usage().await })
     }
 }
 
@@ -1101,6 +1111,8 @@ pub(crate) fn free_model_if_available(slug: &str, model_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+
+    use tokio::sync::OnceCell;
 
     use super::schema::{CatalogCost, CatalogIndex, CatalogLimits, CatalogModel, CatalogProvider};
     use std::sync::Arc;
@@ -1220,6 +1232,25 @@ mod tests {
                 ("free-model".into(), priced(0.0)),
             ]),
         }
+    }
+
+    /// The wrapper receives `/usage` calls before the catalog has warmed, and
+    /// the trait default would answer `Ok(None)` for a provider that does have
+    /// an endpoint. Gated auth fails inside `fetch_usage`, so the error, not
+    /// `Ok(None)`, is the proof the call was forwarded.
+    #[tokio::test]
+    async fn lazy_provider_forwards_fetch_usage_to_resolution() {
+        let (_tmp, state_dir) = temp_state_dir();
+        let data = opencode_go_provider_data("MAKI_TEST_OPENCODE_GO_UNSET_KEY_87016");
+        let resolved =
+            super::CatalogProvider::new(data, &state_dir, Timeouts::default(), false).unwrap();
+        let lazy = super::LazyCatalogProvider {
+            slug: "opencode-go".into(),
+            timeouts: Timeouts::default(),
+            inner: OnceCell::from(Ok(resolved)),
+        };
+        let error = lazy.fetch_usage().await.unwrap_err();
+        assert!(error.to_string().contains("no API key"), "{error}");
     }
 
     #[tokio::test]

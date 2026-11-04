@@ -10,8 +10,8 @@ use serde_json::Value;
 use crate::model::{Model, ModelFamily, ModelInfo};
 use crate::provider::{BoxFuture, Provider};
 use crate::providers::catalog::{
-    CatalogMeta, CatalogTransport, EndpointType, FreeTier, ProviderQuirks, sends_if_available,
-    shared_catalog,
+    CatalogMeta, CatalogTransport, EndpointType, FreeTier, ProviderQuirks, UsageEndpoint,
+    sends_if_available, shared_catalog,
 };
 use crate::spec::{
     AuthDoc, Build, CatalogDoc, GENERIC_DISCOVERY_NOTE, GeneratedDocs, NO_CURATED_MODELS, Native,
@@ -34,7 +34,6 @@ const GO_DISPLAY_NAME: &str = "Opencode Go";
 const ENV_VAR: &str = "OPENCODE_API_KEY";
 const ZEN_API_URL: &str = "https://opencode.ai/zen/v1";
 const GO_API_URL: &str = "https://opencode.ai/zen/go/v1";
-pub(crate) const GO_USAGE_URL: &str = "https://opencode.ai/zen/go/v1/usage";
 const ZEN_FEATURES: &str = "Dynamically discovered models via [models.dev](https://models.dev/) + all the models provided by Opencode Zen API";
 const GO_FEATURES: &str = "Dynamically discovered models via [models.dev](https://models.dev/) + all the models provided by Opencode Go API";
 const GO_DISCOVERY_NOTE: &str = "No hardcoded model catalog. Use any model ID supported by this provider. An API key is required.";
@@ -144,13 +143,18 @@ const FREE_TIER: Option<FreeTier> = Some(FreeTier {
 pub(crate) const ZEN_QUIRKS: ProviderQuirks = ProviderQuirks {
     free_tier: FREE_TIER,
     session_header: Some(SESSION_HEADER),
-    usage_url: None,
+    usage: None,
 };
 
 pub(crate) const GO_QUIRKS: ProviderQuirks = ProviderQuirks {
     free_tier: FREE_TIER,
     session_header: Some(SESSION_HEADER),
-    usage_url: Some(GO_USAGE_URL),
+    usage: Some(GO_USAGE),
+};
+
+const GO_USAGE: UsageEndpoint = UsageEndpoint {
+    url: "https://opencode.ai/zen/go/v1/usage",
+    parse: parse_usage,
 };
 
 /// Plan quotas, served on 401 as well as 429. They clear on a weekly or monthly
@@ -396,8 +400,8 @@ impl GoUsage {
     }
 }
 
-/// The shape `GO_USAGE_URL` answers, see the wire sample in the tests.
-pub(crate) fn parse_usage(body: &str) -> Result<ProviderUsage, AgentError> {
+/// The shape `UsageEndpoint::url` answers, see the wire sample in the tests.
+fn parse_usage(body: &str) -> Result<ProviderUsage, AgentError> {
     let response: GoUsageResponse = serde_json::from_str(body)?;
     Ok(ProviderUsage {
         plan: None,
