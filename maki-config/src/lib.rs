@@ -658,6 +658,56 @@ pub struct PluginFileConfig {
     pub opts: JsonMap<String, JsonValue>,
 }
 
+/// `ui.theme`: a theme for each terminal background. A single name is
+/// shorthand for the same theme on both.
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(from = "ThemeSpec")]
+pub struct ThemePair {
+    pub light: String,
+    pub dark: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ThemeSpec {
+    Name(String),
+    Pair(ThemeSpecPair),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThemeSpecPair {
+    light: String,
+    dark: String,
+}
+
+impl From<ThemeSpec> for ThemePair {
+    fn from(spec: ThemeSpec) -> Self {
+        match spec {
+            ThemeSpec::Name(name) => Self {
+                light: name.clone(),
+                dark: name,
+            },
+            ThemeSpec::Pair(ThemeSpecPair { light, dark }) => Self { light, dark },
+        }
+    }
+}
+
+impl ThemePair {
+    pub fn name(&self, light_background: bool) -> &str {
+        if light_background {
+            &self.light
+        } else {
+            &self.dark
+        }
+    }
+
+    /// Only then is the terminal background worth asking for.
+    pub fn follows_background(&self) -> bool {
+        self.light != self.dark
+    }
+}
+
 #[derive(Deserialize, Default, Debug)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiFileConfig {
@@ -673,7 +723,7 @@ pub struct UiFileConfig {
     /// Gone, replaced by `thinking_lines`. We still read it so an old config
     /// gets told about the new key, not a vague unknown-field error.
     show_thinking: Option<IgnoredAny>,
-    pub theme: Option<String>,
+    pub theme: Option<ThemePair>,
     pub clock_format: Option<ClockFormat>,
     pub tool_output_lines: Option<ToolOutputLinesFile>,
     pub max_input_lines: Option<u32>,
@@ -1455,7 +1505,7 @@ pub struct UiConfig {
     pub cursor_shape_insert: CursorShape,
 
     #[config(skip, default = "None")]
-    pub theme: Option<String>,
+    pub theme: Option<ThemePair>,
 
     #[config(skip, default = "ToolOutputLines::default()")]
     pub tool_output_lines: ToolOutputLines,
@@ -3268,6 +3318,22 @@ mod tests {
     fn notifications_reject_unknown_value() {
         let result: Result<RawConfig, _> = toml::from_str("[ui]\nnotifications = \"desktop\"\n");
         assert!(result.is_err());
+    }
+
+    #[test_case("theme = \"dracula\"", "dracula", "dracula", false ; "name_is_both")]
+    #[test_case("theme = { light = \"catppuccin_latte\", dark = \"catppuccin_macchiato\" }", "catppuccin_latte", "catppuccin_macchiato", true ; "pair")]
+    #[test_case("theme = { light = \"dracula\", dark = \"dracula\" }", "dracula", "dracula", false ; "same_pair")]
+    fn theme_deserialize(line: &str, light: &str, dark: &str, follows: bool) {
+        let raw: RawConfig = toml::from_str(&format!("[ui]\n{line}\n")).unwrap();
+        let theme = raw.into_config(&[]).unwrap().ui.theme.unwrap();
+        assert_eq!((theme.name(true), theme.name(false)), (light, dark));
+        assert_eq!(theme.follows_background(), follows);
+    }
+
+    #[test_case("theme = { light = \"a\" }" ; "missing_dark")]
+    #[test_case("theme = { light = \"a\", dark = \"b\", auto = \"c\" }" ; "unknown_key")]
+    fn theme_rejects_bad_pair(line: &str) {
+        assert!(toml::from_str::<RawConfig>(&format!("[ui]\n{line}\n")).is_err());
     }
 
     #[test]

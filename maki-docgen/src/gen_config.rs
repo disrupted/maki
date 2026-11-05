@@ -115,6 +115,15 @@ fn write_theme_section(out: &mut String) {
          a warning.\n"
     )
     .unwrap();
+    writeln!(
+        out,
+        "To follow a light or dark terminal, give one theme for each: \
+         `theme = {{ light = \"catppuccin_latte\", dark = \"catppuccin_macchiato\" }}`. \
+         Maki then asks the terminal for its background color at startup and \
+         uses `dark` when the terminal does not say. A single name, or the same \
+         theme on both sides, skips the question.\n"
+    )
+    .unwrap();
     let names = maki_ui::BUNDLED_THEMES
         .iter()
         .map(|t| format!("`{}`", t.name))
