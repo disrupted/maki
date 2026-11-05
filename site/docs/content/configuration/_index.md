@@ -87,7 +87,7 @@ All fields are optional. Typos in field names cause an error right away.
 
 Name of the color theme to load at startup, overriding the theme you last picked interactively. If unset, Maki keeps your last selection (the built-in default on first run). An unknown name is ignored with a warning.
 
-To follow a light or dark terminal, give one theme for each: `theme = { light = "catppuccin_latte", dark = "catppuccin_macchiato" }`. Maki asks the terminal for its background color at startup and uses `dark` when the terminal does not say.
+To follow a light or dark terminal, give one theme for each: `theme = { light = "catppuccin_latte", dark = "catppuccin_macchiato" }`. Maki then asks the terminal for its background color at startup and uses `dark` when the terminal does not say. A single name, or the same theme on both sides, skips the question.
 
 Available themes: `ayu_dark`, `ayu_light`, `ayu_mirage`, `carbonfox`, `catppuccin_frappe`, `catppuccin_latte`, `catppuccin_macchiato`, `catppuccin_mocha`, `dark_daltonized`, `dracula`, `everforest_dark`, `fleet_dark`, `github_dark`, `gruvbox`, `gruvbox_light`, `kanagawa`, `kanagawa_ink`, `kanagawa_plum`, `material_darker`, `monokai_pro`, `night_owl`, `nightfox`, `nord`, `onedark`, `rose_pine`, `rose_pine_dawn`, `rose_pine_midnight`, `rose_pine_moon`, `solarized_dark`, `solarized_light`, `system`, `tokyonight`, `vscode_dark_plus`, `zenburn`.
 

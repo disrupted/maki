@@ -261,6 +261,10 @@ impl SessionStatus {
     }
 }
 
+/// A `/reload` cannot ask the terminal: its input reader owns the tty.
+const RESTART_FOR_BACKGROUND: &str =
+    "ui.theme: restart Maki to detect the terminal background, using dark until then";
+
 fn prepend_preamble(preamble: &mut Vec<Message>, mut leading: Vec<Message>) {
     leading.append(preamble);
     *preamble = leading;
@@ -676,9 +680,12 @@ impl<'t> EventLoop<'t> {
         // Apply the config theme before the warmup thread spawns, or warmup
         // could bake the syntax palette from the old theme. Only the
         // in-memory name is set, so the user's saved pick survives.
-        if let Some(ref choice) = ui_config.theme {
+        if let Some(ref pair) = ui_config.theme {
+            if pair.follows_background() && !crate::appearance::probed() {
+                startup_warnings.push(RESTART_FOR_BACKGROUND.to_owned());
+            }
             let light = crate::appearance::background() == crate::appearance::Background::Light;
-            let name = choice.name(light);
+            let name = pair.name(light);
             match crate::theme::load_by_name(name) {
                 Ok(theme) => {
                     crate::theme::set_current_name(name);

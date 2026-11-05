@@ -657,28 +657,53 @@ pub struct PluginFileConfig {
     pub opts: JsonMap<String, JsonValue>,
 }
 
-/// `ui.theme`: one theme, or one per terminal background.
+/// `ui.theme`: a theme for each terminal background. A single name is
+/// shorthand for the same theme on both.
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum ThemeChoice {
-    Fixed(String),
-    ByBackground(ThemePair),
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "ThemeSpec")]
 pub struct ThemePair {
     pub light: String,
     pub dark: String,
 }
 
-impl ThemeChoice {
-    pub fn name(&self, light_background: bool) -> &str {
-        match self {
-            Self::Fixed(name) => name,
-            Self::ByBackground(pair) if light_background => &pair.light,
-            Self::ByBackground(pair) => &pair.dark,
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ThemeSpec {
+    Name(String),
+    Pair(ThemeSpecPair),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThemeSpecPair {
+    light: String,
+    dark: String,
+}
+
+impl From<ThemeSpec> for ThemePair {
+    fn from(spec: ThemeSpec) -> Self {
+        match spec {
+            ThemeSpec::Name(name) => Self {
+                light: name.clone(),
+                dark: name,
+            },
+            ThemeSpec::Pair(ThemeSpecPair { light, dark }) => Self { light, dark },
         }
+    }
+}
+
+impl ThemePair {
+    pub fn name(&self, light_background: bool) -> &str {
+        if light_background {
+            &self.light
+        } else {
+            &self.dark
+        }
+    }
+
+    /// Only then is the terminal background worth asking for.
+    pub fn follows_background(&self) -> bool {
+        self.light != self.dark
     }
 }
 
@@ -696,7 +721,7 @@ pub struct UiFileConfig {
     /// Gone, replaced by `thinking_lines`. We still read it so an old config
     /// gets told about the new key, not a vague unknown-field error.
     show_thinking: Option<IgnoredAny>,
-    pub theme: Option<ThemeChoice>,
+    pub theme: Option<ThemePair>,
     pub clock_format: Option<ClockFormat>,
     pub tool_output_lines: Option<ToolOutputLinesFile>,
     pub max_input_lines: Option<u32>,
@@ -1384,7 +1409,7 @@ pub struct UiConfig {
     pub clock_format: ClockFormat,
 
     #[config(skip, default = "None")]
-    pub theme: Option<ThemeChoice>,
+    pub theme: Option<ThemePair>,
 
     #[config(skip, default = "ToolOutputLines::default()")]
     pub tool_output_lines: ToolOutputLines,
@@ -3182,12 +3207,14 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test_case("theme = \"dracula\"", "dracula", "dracula" ; "fixed")]
-    #[test_case("theme = { light = \"catppuccin_latte\", dark = \"catppuccin_macchiato\" }", "catppuccin_latte", "catppuccin_macchiato" ; "pair")]
-    fn theme_deserialize(line: &str, light: &str, dark: &str) {
+    #[test_case("theme = \"dracula\"", "dracula", "dracula", false ; "name_is_both")]
+    #[test_case("theme = { light = \"catppuccin_latte\", dark = \"catppuccin_macchiato\" }", "catppuccin_latte", "catppuccin_macchiato", true ; "pair")]
+    #[test_case("theme = { light = \"dracula\", dark = \"dracula\" }", "dracula", "dracula", false ; "same_pair")]
+    fn theme_deserialize(line: &str, light: &str, dark: &str, follows: bool) {
         let raw: RawConfig = toml::from_str(&format!("[ui]\n{line}\n")).unwrap();
         let theme = raw.into_config(&[]).unwrap().ui.theme.unwrap();
         assert_eq!((theme.name(true), theme.name(false)), (light, dark));
+        assert_eq!(theme.follows_background(), follows);
     }
 
     #[test_case("theme = { light = \"a\" }" ; "missing_dark")]

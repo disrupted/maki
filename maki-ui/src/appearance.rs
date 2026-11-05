@@ -1,5 +1,5 @@
-//! Is the terminal light or dark? Asked once at startup so `ui.theme` can
-//! pick between a light and a dark theme.
+//! Is the terminal light or dark? Asked once at startup, and only when
+//! `ui.theme` has a different theme for each.
 //!
 //! Like neovim, we ask the terminal for its background color (`OSC 11`) and
 //! judge it by luminance, so the answer follows what is actually on screen.
@@ -12,6 +12,8 @@
 
 use std::sync::OnceLock;
 
+use maki_config::ThemePair;
+
 use crate::tty_probe::{self, find};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,12 +25,24 @@ pub enum Background {
 static BACKGROUND: OnceLock<Background> = OnceLock::new();
 
 /// Same rules as `tty_probe::query`: raw mode, before the input reader.
-pub(crate) fn init() {
-    BACKGROUND.get_or_init(detect);
+/// Probes once per process, and only for a `ui.theme` whose light and dark
+/// differ, so nobody else waits on the round trip.
+pub(crate) fn init(theme: Option<&ThemePair>) {
+    if theme.is_some_and(ThemePair::follows_background) {
+        BACKGROUND.get_or_init(detect);
+    }
 }
 
+/// What the startup probe found. Never probes: past startup the input
+/// reader owns the tty, and replies would land in it.
 pub(crate) fn background() -> Background {
-    *BACKGROUND.get_or_init(detect)
+    BACKGROUND.get().copied().unwrap_or(Background::Dark)
+}
+
+/// False when startup skipped the probe, as when a `/reload` brings in the
+/// first light/dark pair.
+pub(crate) fn probed() -> bool {
+    BACKGROUND.get().is_some()
 }
 
 fn detect() -> Background {
@@ -68,6 +82,18 @@ fn parse_osc11(buf: &[u8]) -> Option<(f64, f64, f64)> {
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[test]
+    fn no_probe_without_a_differing_pair() {
+        let same = ThemePair {
+            light: "dracula".into(),
+            dark: "dracula".into(),
+        };
+        init(None);
+        init(Some(&same));
+        assert!(!probed());
+        assert_eq!(background(), Background::Dark);
+    }
 
     #[test_case(b"\x1b]11;rgb:2828/2a2a/3636\x1b\\\x1b[?62c", Some(Background::Dark); "dracula_st")]
     #[test_case(b"\x1b]11;rgb:efef/f1f1/f5f5\x07\x1b[?62c", Some(Background::Light); "latte_bel")]

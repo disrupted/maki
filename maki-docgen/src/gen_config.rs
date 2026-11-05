@@ -117,8 +117,9 @@ fn write_theme_section(out: &mut String) {
         out,
         "To follow a light or dark terminal, give one theme for each: \
          `theme = {{ light = \"catppuccin_latte\", dark = \"catppuccin_macchiato\" }}`. \
-         Maki asks the terminal for its background color at startup and uses \
-         `dark` when the terminal does not say.\n"
+         Maki then asks the terminal for its background color at startup and \
+         uses `dark` when the terminal does not say. A single name, or the same \
+         theme on both sides, skips the question.\n"
     )
     .unwrap();
     let names = maki_ui::BUNDLED_THEMES
