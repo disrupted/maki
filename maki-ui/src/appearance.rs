@@ -6,11 +6,13 @@
 //! A terminal that does not answer counts as dark, which is what Maki
 //! assumed before it asked.
 //!
-//! Only `OSC 11` is sent, not the `CSI ? 996 n` color scheme query: the
-//! crossterm parser we ship cannot decode a `CSI ? 997 n` reply, and one that
-//! straggled in after the probe would stall all later input.
+//! Only `OSC 11` is sent, not the `CSI ? 996 n` color scheme query: a
+//! reply that straggled in after the probe would land in the input reader.
+//!
+//! After startup the terminal reports changes itself (DEC mode `?2031`,
+//! `Event::ColorSchemeChanged`), and [`set`] records them.
 
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use maki_config::ThemePair;
 
@@ -22,27 +24,43 @@ pub enum Background {
     Dark,
 }
 
-static BACKGROUND: OnceLock<Background> = OnceLock::new();
+const UNKNOWN: u8 = 0;
+const LIGHT: u8 = 1;
+const DARK: u8 = 2;
+
+static BACKGROUND: AtomicU8 = AtomicU8::new(UNKNOWN);
 
 /// Same rules as `tty_probe::query`: raw mode, before the input reader.
 /// Probes once per process, and only for a `ui.theme` whose light and dark
 /// differ, so nobody else waits on the round trip.
 pub(crate) fn init(theme: Option<&ThemePair>) {
-    if theme.is_some_and(ThemePair::follows_background) {
-        BACKGROUND.get_or_init(detect);
+    if theme.is_some_and(ThemePair::follows_background) && !probed() {
+        set(detect());
     }
 }
 
-/// What the startup probe found. Never probes: past startup the input
+/// What is known, dark if nothing is. Never probes: past startup the input
 /// reader owns the tty, and replies would land in it.
 pub(crate) fn background() -> Background {
-    BACKGROUND.get().copied().unwrap_or(Background::Dark)
+    match BACKGROUND.load(Ordering::Acquire) {
+        LIGHT => Background::Light,
+        _ => Background::Dark,
+    }
 }
 
 /// False when startup skipped the probe, as when a `/reload` brings in the
-/// first light/dark pair.
+/// first light/dark pair. Also what turns on the terminal's change reports.
 pub(crate) fn probed() -> bool {
-    BACKGROUND.get().is_some()
+    BACKGROUND.load(Ordering::Acquire) != UNKNOWN
+}
+
+/// Records a reported {background}; true when it differs from what was known.
+pub(crate) fn set(background: Background) -> bool {
+    let value = match background {
+        Background::Light => LIGHT,
+        Background::Dark => DARK,
+    };
+    BACKGROUND.swap(value, Ordering::AcqRel) != value
 }
 
 fn detect() -> Background {
@@ -93,6 +111,15 @@ mod tests {
         init(Some(&same));
         assert!(!probed());
         assert_eq!(background(), Background::Dark);
+    }
+
+    #[test]
+    fn set_reports_only_changes() {
+        set(Background::Dark);
+        assert!(!set(Background::Dark));
+        assert!(set(Background::Light));
+        assert_eq!(background(), Background::Light);
+        assert!(set(Background::Dark));
     }
 
     #[test_case(b"\x1b]11;rgb:2828/2a2a/3636\x1b\\\x1b[?62c", Some(Background::Dark); "dracula_st")]
