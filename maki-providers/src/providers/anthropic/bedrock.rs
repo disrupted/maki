@@ -200,11 +200,7 @@ async fn lookup_credentials(region: Region) -> Result<Credentials, CredentialsEr
 }
 
 fn invoke_request(client: &Client, url: &str) -> Result<Request, AgentError> {
-    let request = client
-        .post(url)
-        .header("user-agent", super::super::user_agent())
-        .header(CONTENT_TYPE, JSON)
-        .build()?;
+    let request = client.post(url).header(CONTENT_TYPE, JSON).build()?;
     Ok(request)
 }
 

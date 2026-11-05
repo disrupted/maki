@@ -12,6 +12,7 @@ use serde_json::Value;
 use tokio::task::JoinError;
 
 use crate::{
+    headers::HeaderError,
     http::{error_chain, is_connect_failure},
     providers::opencode::{self, NonLoginError},
     retry::RetryKind,
@@ -481,6 +482,15 @@ impl From<maki_storage::StorageError> for AgentError {
 /// it is never retried.
 impl From<JoinError> for AgentError {
     fn from(e: JoinError) -> Self {
+        Self::Config {
+            message: e.to_string(),
+        }
+    }
+}
+
+/// A header someone wrote that cannot go on a request, named in the message.
+impl From<HeaderError> for AgentError {
+    fn from(e: HeaderError) -> Self {
         Self::Config {
             message: e.to_string(),
         }

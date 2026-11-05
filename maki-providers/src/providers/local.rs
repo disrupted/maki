@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use flume::Sender;
 use futures::future::join_all;
 use maki_storage::id::SessionRef;
+use reqwest::header::HeaderMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::{debug, warn};
@@ -169,6 +170,7 @@ impl Provider for LocalEndpoint {
                 return responses::do_stream(
                     self.compat.client(),
                     model,
+                    &HeaderMap::new(),
                     &body,
                     event_tx,
                     &auth,
@@ -187,7 +189,7 @@ impl Provider for LocalEndpoint {
                 .apply_thinking(&mut body, model, self.thinking_fallback);
 
             self.compat
-                .do_stream(model, &[], &body, event_tx, &auth)
+                .do_stream(model, &HeaderMap::new(), &body, event_tx, &auth)
                 .await
         })
     }
@@ -763,7 +765,7 @@ mod tests {
         .unwrap();
         let auth = ep.auth.lock().unwrap();
         assert_eq!(auth.base_url.as_deref(), Some("http://x:1234/v1"));
-        assert!(auth.headers.is_empty());
+        assert!(auth.header_list().is_empty());
     }
 
     #[test]
@@ -773,8 +775,8 @@ mod tests {
             LocalEndpoint::build(&OLLAMA, Timeouts::default(), Some(pool), None, None).unwrap();
         let auth = ep.auth.lock().unwrap();
         assert_eq!(auth.base_url.as_deref(), Some("https://ollama.com/v1"));
-        assert_eq!(auth.headers.len(), 1);
-        assert_eq!(auth.headers[0].1, "Bearer test-key");
+        assert_eq!(auth.header_list().len(), 1);
+        assert_eq!(auth.header_list()[0].1, "Bearer test-key");
     }
 
     #[test]
@@ -790,8 +792,8 @@ mod tests {
         .unwrap();
         let auth = ep.auth.lock().unwrap();
         assert_eq!(auth.base_url.as_deref(), Some("http://local:1234/v1"));
-        assert_eq!(auth.headers.len(), 1);
-        assert_eq!(auth.headers[0].1, "Bearer test-key");
+        assert_eq!(auth.header_list().len(), 1);
+        assert_eq!(auth.header_list()[0].1, "Bearer test-key");
     }
 
     #[test]
@@ -816,7 +818,7 @@ mod tests {
         .unwrap();
         let auth = ep.auth.lock().unwrap();
         assert_eq!(auth.base_url.as_deref(), Some("http://x:1234/v1"));
-        assert!(auth.headers.is_empty());
+        assert!(auth.header_list().is_empty());
     }
 
     #[test]

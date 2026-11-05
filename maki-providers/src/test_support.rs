@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::ops::Index;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
@@ -25,6 +26,8 @@ const AUTHORIZATION: &str = "authorization";
 const BIND_FAILED: &str = "cannot bind loopback";
 const IO_FAILED: &str = "the recorded connection broke";
 const QUERY_START: char = '?';
+const HEADER_REPEATED: &str = "the client sent a header more than once";
+const HEADER_NOT_SENT: &str = "the client did not send the header";
 const BAD_DECLARATION: &str = "the test declaration must register";
 const MIXED_SCRIPT: &str =
     "a script is either all routed with `Canned::at` or all sequential, never a mix";
@@ -94,10 +97,53 @@ pub fn is_routed(script: &[Canned]) -> bool {
 pub struct Recorded {
     pub method: String,
     pub path: String,
-    /// Lowercased names, in name order, so a comparison reads the same on
-    /// every run whatever order the client emitted them in.
-    pub headers: BTreeMap<String, String>,
+    pub headers: RecordedHeaders,
     pub body: Vec<u8>,
+}
+
+/// Every value the client sent, under lowercased names in name order, so a
+/// comparison reads the same on every run whatever order the client emitted
+/// them in. A repeated header is kept rather than collapsed, and reading it
+/// as one value panics: RFC 9110 leaves two copies of a singleton header to
+/// the receiver's guess, so no test may pass on one.
+#[derive(Default)]
+pub struct RecordedHeaders(BTreeMap<String, Vec<String>>);
+
+impl RecordedHeaders {
+    pub fn get(&self, name: &str) -> Option<&String> {
+        self.0.get(name).map(|values| single(name, values))
+    }
+
+    /// What went out under `name`, repeats included.
+    pub fn values(&self, name: &str) -> &[String] {
+        self.0.get(name).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.0
+            .iter()
+            .map(|(name, values)| (name, single(name, values)))
+    }
+
+    fn push(&mut self, name: String, value: String) {
+        self.0.entry(name).or_default().push(value);
+    }
+}
+
+impl Index<&str> for RecordedHeaders {
+    type Output = String;
+
+    fn index(&self, name: &str) -> &String {
+        self.get(name)
+            .unwrap_or_else(|| panic!("{HEADER_NOT_SENT}: {name}"))
+    }
+}
+
+fn single<'a>(name: &str, values: &'a [String]) -> &'a String {
+    match values {
+        [value] => value,
+        _ => panic!("{HEADER_REPEATED}: {name}: {values:?}"),
+    }
 }
 
 impl Recorded {
@@ -174,7 +220,7 @@ fn read_request(stream: &TcpStream) -> Recorded {
     let method = start.next().unwrap_or_default().to_owned();
     let path = start.next().unwrap_or_default().to_owned();
 
-    let mut headers = BTreeMap::new();
+    let mut headers = RecordedHeaders::default();
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).expect(IO_FAILED);
@@ -183,7 +229,7 @@ fn read_request(stream: &TcpStream) -> Recorded {
             break;
         }
         if let Some((name, value)) = line.split_once(':') {
-            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
+            headers.push(name.trim().to_ascii_lowercase(), value.trim().to_owned());
         }
     }
 

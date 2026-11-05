@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use flume::Sender;
 use maki_storage::id::SessionRef;
-use reqwest::{Client, Method, RequestBuilder};
+use reqwest::{Client, Method, Request, RequestBuilder};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
@@ -32,7 +32,7 @@ use crate::{
 use super::codec::SessionCarrier;
 use super::{KeyHeader, KeyPool, KeyRotation, ResolvedAuth, Timeouts};
 
-const API_VERSION: &str = "2023-06-01";
+pub(crate) const API_VERSION: &str = "2023-06-01";
 const API_ORIGIN: &str = "https://api.anthropic.com";
 const API_HOST: &str = "api.anthropic.com";
 const MESSAGES_PATH: &str = "/v1/messages";
@@ -331,9 +331,7 @@ fn usage_eligible(
     fallback_base_url: Option<&str>,
     configured_override: Option<&str>,
 ) -> bool {
-    auth.headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+    auth.header(super::AUTHORIZATION_HEADER).is_some()
         && auth
             .base_url
             .as_deref()
@@ -432,23 +430,34 @@ impl Anthropic {
             .unwrap_or(API_ORIGIN)
     }
 
-    fn build_request(&self, method: Method, path: &str) -> RequestBuilder {
-        self.build_request_with(&self.auth.lock().unwrap(), method, path)
+    fn build_request(
+        &self,
+        method: Method,
+        path: &str,
+        betas: &[&str],
+    ) -> Result<Request, AgentError> {
+        let auth = self.auth.lock().unwrap();
+        auth.finish(self.request_with(&auth, method, path, betas))
     }
 
-    fn build_request_with(
+    /// What maki sends on its own, for [`ResolvedAuth::finish`] to go over.
+    fn request_with(
         &self,
         auth: &ResolvedAuth,
         method: Method,
         path: &str,
+        betas: &[&str],
     ) -> RequestBuilder {
         let url = format!("{}{path}", origin(self.base_url(auth)));
-        auth.configure_request(
-            self.client
-                .request(method, url)
-                .header("anthropic-version", API_VERSION)
-                .header("user-agent", super::user_agent()),
-        )
+        let builder = self
+            .client
+            .request(method, url)
+            .header("anthropic-version", API_VERSION);
+        if betas.is_empty() {
+            builder
+        } else {
+            builder.header("anthropic-beta", betas.join(","))
+        }
     }
 
     async fn do_stream_request(
@@ -459,13 +468,11 @@ impl Anthropic {
         betas: &[&str],
     ) -> Result<StreamResponse, AgentError> {
         let json_body = serde_json::to_vec(body)?;
-        let mut builder = self
-            .build_request_with(auth, Method::POST, MESSAGES_PATH)
-            .header("content-type", "application/json");
-        if !betas.is_empty() {
-            builder = builder.header("anthropic-beta", betas.join(","));
-        }
-        let request = builder.body(json_body).build()?;
+        let request = auth.finish(
+            self.request_with(auth, Method::POST, MESSAGES_PATH, betas)
+                .header("content-type", "application/json")
+                .body(json_body),
+        )?;
         super::send_request(&self.client, request, |response| async move {
             if response.status().as_u16() == 200 {
                 parse_sse(super::body_reader(response), event_tx, self.stream_timeout).await
@@ -486,7 +493,7 @@ impl Anthropic {
                 path.push_str(&format!("&after_id={cursor}"));
             }
 
-            let request = self.build_request(Method::GET, &path).build()?;
+            let request = self.build_request(Method::GET, &path, &[])?;
             let body_text = super::ok_text(&self.client, request).await?;
             let page: ModelsPage = serde_json::from_str(&body_text)?;
             for m in page.data {
@@ -566,7 +573,7 @@ impl Provider for Anthropic {
                 betas.push(BLOCK_BINDING_BETA);
             }
             if let Some(session) = session_id {
-                self.session_id.apply(session, &mut body, &mut auth);
+                self.session_id.apply(session, &mut body, &mut auth)?;
             }
 
             debug!(model = %model.id, num_messages = messages.len(), thinking = ?opts.thinking, ?betas, "sending API request");
@@ -610,10 +617,7 @@ impl Provider for Anthropic {
             ) {
                 return Ok(None);
             }
-            let request = self
-                .build_request(Method::GET, USAGE_PATH)
-                .header("anthropic-beta", OAUTH_BETA)
-                .build()?;
+            let request = self.build_request(Method::GET, USAGE_PATH, &[OAUTH_BETA])?;
             let body_text = super::ok_text(&self.client, request).await?;
             let parsed: OauthUsage = serde_json::from_str(&body_text)?;
             Ok(Some(parsed.into()))
@@ -845,7 +849,7 @@ mod tests {
         )
         .with_fallback_base_url(Some(THIRD_PARTY_BASE_URL.into()));
         provider.reload_auth().await.unwrap();
-        assert_eq!(provider.auth.lock().unwrap().headers, headers);
+        assert_eq!(provider.auth.lock().unwrap().header_list(), headers);
     }
 
     #[test_case(None, true ; "no_fallback_is_anthropic")]
