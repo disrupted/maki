@@ -29,6 +29,7 @@ use maki_storage::id::SessionRef;
 use crate::model::{Model, ModelInfo, ModelPricing};
 use crate::provider::{BoxFuture, Provider};
 use crate::providers::anthropic::shared;
+use crate::providers::codec::SessionCarrier;
 use crate::providers::openai_compat::{
     DEFAULT_MAX_TOKENS_FIELD, OpenAiCompatConfig, OpenAiCompatProvider,
 };
@@ -87,10 +88,13 @@ pub enum EndpointType {
 }
 
 /// Behaviour a provider needs beyond what models.dev publishes.
-#[derive(Debug, Clone, Copy, Default)]
+/// No `Copy`: a quirk may carry a [`SessionCarrier`], whose headers are a
+/// `Cow`. No `PartialEq`: [`UsageEndpoint`] holds fn pointers.
+#[derive(Debug, Clone, Default)]
 pub struct ProviderQuirks {
     pub free_tier: Option<FreeTier>,
-    pub session_header: Option<&'static str>,
+    /// Headers only: the catalog transport builds bodies no quirk reaches.
+    pub session_id: SessionCarrier,
     /// Quota endpoint a [`CatalogProvider::fetch_usage`] reads, with the
     /// parser that understands the wire it answers.
     pub usage: Option<UsageEndpoint>,
@@ -129,7 +133,7 @@ fn quirks_for(slug: &str) -> ProviderQuirks {
     QUIRKS
         .iter()
         .find(|(slugs, _)| slugs.contains(&slug))
-        .map(|(_, quirks)| *quirks)
+        .map(|(_, quirks)| quirks.clone())
         .unwrap_or_default()
 }
 
@@ -215,8 +219,8 @@ impl ProviderData {
         mut auth: ResolvedAuth,
         session_id: Option<&SessionRef>,
     ) -> ResolvedAuth {
-        if let (Some(header), Some(sid)) = (self.quirks.session_header, session_id) {
-            auth.set_header(header, sid.to_string());
+        if let Some(session) = session_id {
+            self.quirks.session_id.apply_headers(session, &mut auth);
         }
         auth
     }
