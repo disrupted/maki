@@ -676,7 +676,9 @@ impl<'t> EventLoop<'t> {
         // Apply the config theme before the warmup thread spawns, or warmup
         // could bake the syntax palette from the old theme. Only the
         // in-memory name is set, so the user's saved pick survives.
-        if let Some(ref name) = ui_config.theme {
+        if let Some(ref choice) = ui_config.theme {
+            let light = crate::appearance::background() == crate::appearance::Background::Light;
+            let name = choice.name(light);
             match crate::theme::load_by_name(name) {
                 Ok(theme) => {
                     crate::theme::set_current_name(name);
