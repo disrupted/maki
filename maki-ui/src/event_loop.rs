@@ -82,6 +82,7 @@ use crate::components::{Action, ExitRequest, Status};
 use crate::decor_worker;
 use crate::input::InputReader;
 use crate::repaint::{Dirty, IDLE_POLL};
+use crate::theme;
 use crate::wheel::WheelScroll;
 use crate::{AppSession, OpenSession};
 

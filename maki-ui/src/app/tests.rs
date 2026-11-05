@@ -19,6 +19,7 @@ use crate::highlight::TAB_SPACES;
 use crate::repaint::expect::{OWED, QUIET};
 use crate::selection::{RowPos, SelectableZone, SelectionState, SelectionZone};
 use crate::text_buffer::{Decoration, EDIT_CONFLICT_ERR, INPUT_REPLACED_ERR, Mark};
+use crate::theme;
 use arc_swap::ArcSwap;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
 use maki_agent::agent::TranscriptError;
