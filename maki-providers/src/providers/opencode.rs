@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 use flume::Sender;
@@ -18,6 +19,7 @@ use crate::spec::{
 };
 use crate::{AgentError, Message, ProviderEvent, RequestOptions, StreamResponse, ThinkingConfig};
 
+use super::codec::SessionCarrier;
 use super::{ResolvedAuth, Timeouts, with_prefix};
 
 /// Zen lives under the bare `opencode` models.dev entry; Go has its own.
@@ -126,7 +128,7 @@ fn create_with_auth(
 /// OpenCode asked clients to send one stable ID per conversation and warned
 /// that requests without it may start failing:
 /// https://github.com/tontinton/maki/issues/935
-const SESSION_HEADER: &str = "x-opencode-session";
+const SESSION_HEADERS: &[Cow<'static, str>] = &[Cow::Borrowed("x-opencode-session")];
 const PUBLIC_KEY: &str = "public";
 
 pub(crate) const QUIRKS: ProviderQuirks = ProviderQuirks {
@@ -134,7 +136,10 @@ pub(crate) const QUIRKS: ProviderQuirks = ProviderQuirks {
         public_key: PUBLIC_KEY,
         config_slug: ZEN_SLUG,
     }),
-    session_header: Some(SESSION_HEADER),
+    session_id: SessionCarrier {
+        headers: Cow::Borrowed(SESSION_HEADERS),
+        body_field: None,
+    },
 };
 
 /// Plan quotas, served on 401 as well as 429. They clear on a weekly or monthly
